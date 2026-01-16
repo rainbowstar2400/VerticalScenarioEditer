@@ -11,7 +11,7 @@ namespace VerticalScenarioEditer;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string FileFilter = "Vertical Scenario Editor (*.vse)|*.vse|JSON (*.json)|*.json|All files (*.*)|*.*";
+    private const string FileFilter = "Vertical Scenario Editor (*.vse)|*.vse|JSON (*.json)|*.json|すべてのファイル (*.*)|*.*";
     private DocumentState _document = DocumentState.CreateDefault();
     private string? _currentFilePath;
 
@@ -41,7 +41,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "Open Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, ex.Message, "読み込みに失敗しました", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -82,13 +82,13 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "Save Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, ex.Message, "保存に失敗しました", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
     private void UpdateTitle()
     {
-        var fileLabel = string.IsNullOrWhiteSpace(_currentFilePath) ? "Untitled" : _currentFilePath;
+        var fileLabel = string.IsNullOrWhiteSpace(_currentFilePath) ? "無題" : _currentFilePath;
         Title = $"Vertical Scenario Editer - {fileLabel}";
     }
 }
