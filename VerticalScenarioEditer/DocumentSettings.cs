@@ -7,7 +7,7 @@ namespace VerticalScenarioEditer;
 
 public static class DocumentSettings
 {
-    public const string DefaultFontFamilyName = "Yu Mincho";
+    public const string DefaultFontFamilyName = "游明朝";
     public const double DefaultFontSizePt = 10.5;
     public const double LineSpacing = 1.0;
 
