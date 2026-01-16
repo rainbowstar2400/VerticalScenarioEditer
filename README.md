@@ -1,2 +1,2 @@
-# -
-縦書き脚本エディタ
+# VerticalScenarioEditer
+縦書き脚本エディタ。
