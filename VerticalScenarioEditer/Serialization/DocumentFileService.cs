@@ -9,7 +9,8 @@ public static class DocumentFileService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        WriteIndented = true
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true
     };
 
     public static DocumentState Load(string path)
