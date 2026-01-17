@@ -11,7 +11,7 @@ namespace VerticalScenarioEditer;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string FileFilter = "Vertical Scenario Editor (*.vse)|*.vse|JSON (*.json)|*.json|すべてのファイル (*.*)|*.*";
+    private const string FileFilter = "縦書き脚本エディタ (*.vse)|*.vse|JSON (*.json)|*.json|すべてのファイル (*.*)|*.*";
     private DocumentState _document = DocumentState.CreateDefault();
     private string? _currentFilePath;
 
@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         UpdateTitle();
+        DocumentView.Document = _document;
     }
 
     private void OnFileOpenClick(object sender, RoutedEventArgs e)
@@ -38,6 +39,7 @@ public partial class MainWindow : Window
             _document = DocumentFileService.Load(dialog.FileName);
             _currentFilePath = dialog.FileName;
             UpdateTitle();
+            DocumentView.Document = _document;
         }
         catch (Exception ex)
         {
@@ -79,6 +81,7 @@ public partial class MainWindow : Window
             DocumentFileService.Save(path, _document);
             _currentFilePath = path;
             UpdateTitle();
+            DocumentView.Document = _document;
         }
         catch (Exception ex)
         {
@@ -89,6 +92,6 @@ public partial class MainWindow : Window
     private void UpdateTitle()
     {
         var fileLabel = string.IsNullOrWhiteSpace(_currentFilePath) ? "無題" : _currentFilePath;
-        Title = $"Vertical Scenario Editer - {fileLabel}";
+        Title = $"縦書き脚本エディタ - {fileLabel}";
     }
 }

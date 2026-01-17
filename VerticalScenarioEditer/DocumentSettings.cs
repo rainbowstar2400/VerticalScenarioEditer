@@ -10,6 +10,9 @@ public static class DocumentSettings
     public const string DefaultFontFamilyName = "游明朝";
     public const double DefaultFontSizePt = 10.5;
     public const double LineSpacing = 1.0;
+    public const double RoleLabelHeightChars = 5.5;
+    public const double RecordGapChars = 1.0;
+    public const double PageGapDip = 24.0;
 
     public const double PageWidthMm = 210.0;
     public const double PageHeightMm = 297.0;
@@ -25,6 +28,9 @@ public static class DocumentSettings
     public static double MarginTopDip => MmToDip(MarginTopMm);
     public static double MarginBottomDip => MmToDip(MarginBottomMm);
     public static double FontSizeDip => PointsToDip(DefaultFontSizePt);
+    public static double ColumnAdvanceDip => FontSizeDip * LineSpacing;
+    public static double RoleLabelHeightDip => ColumnAdvanceDip * RoleLabelHeightChars;
+    public static double RecordGapDip => ColumnAdvanceDip * RecordGapChars;
     public static Thickness PageMargin => new Thickness(MarginLeftDip, MarginTopDip, MarginRightDip, MarginBottomDip);
     public static FontFamily DefaultFontFamily { get; } = CreateDefaultFontFamily();
 
