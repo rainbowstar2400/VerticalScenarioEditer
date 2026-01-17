@@ -24,52 +24,165 @@
       place-items: center;
     }
     .page {
-      width: 794px;
-      height: 1123px;
       background: var(--page);
       border: 1px solid var(--frame);
-      display: grid;
-      place-items: center;
       box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      position: relative;
+      overflow: hidden;
     }
-    .note {
+    .content {
+      position: absolute;
+      display: flex;
+      flex-direction: row-reverse;
+      align-items: flex-start;
+    }
+    .record {
+      display: flex;
+      flex-direction: row-reverse;
+    }
+    .column {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .role,
+    .body {
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      white-space: pre;
+      line-height: var(--line-advance);
+      font-size: var(--font-size);
+      font-family: var(--font-family);
+      color: var(--text);
+    }
+    .status {
       font-size: 14px;
       letter-spacing: 0.08em;
-      margin-bottom: 16px;
-    }
-    .payload {
-      width: 70%;
-      height: 55%;
-      overflow: auto;
-      background: #f7f7f7;
-      border: 1px solid #dedede;
-      padding: 12px;
-      font-size: 12px;
-      white-space: pre-wrap;
+      color: #666666;
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="page">
-      <div class="note" id="status">WebView2 の準備中です</div>
-      <pre class="payload" id="payload" aria-live="polite"></pre>
-    </div>
+    <div class="status" id="status">WebView2 の準備中です</div>
   </div>
   <script>
     const status = document.getElementById('status');
-    const payload = document.getElementById('payload');
+    const wrap = document.querySelector('.wrap');
+
+    function mmToPx(mm) {
+      return mm / 25.4 * 96;
+    }
+
+    function buildColumns(text, maxCharsPerColumn) {
+      const columns = [];
+      let current = '';
+      for (const ch of text) {
+        if (ch === '\r') {
+          continue;
+        }
+        if (ch === '\n') {
+          columns.push(current);
+          current = '';
+          continue;
+        }
+        current += ch;
+        if (current.length >= maxCharsPerColumn) {
+          columns.push(current);
+          current = '';
+        }
+      }
+      if (current.length > 0 || columns.length === 0) {
+        columns.push(current);
+      }
+      return columns;
+    }
 
     function renderDocument(message) {
-      status.textContent = 'ドキュメントを受信しました';
-      payload.textContent = JSON.stringify(message, null, 2);
+      if (!message || message.type !== 'initDocument') {
+        return;
+      }
+
+      const doc = message.document || { records: [] };
+      const settings = message.settings || {};
+      const pageWidth = mmToPx(settings.pageWidthMm || 210);
+      const pageHeight = mmToPx(settings.pageHeightMm || 297);
+      const marginLeft = mmToPx(settings.marginLeftMm || 20);
+      const marginRight = mmToPx(settings.marginRightMm || 20);
+      const marginTop = mmToPx(settings.marginTopMm || 25);
+      const marginBottom = mmToPx(settings.marginBottomMm || 25);
+      const fontSize = (settings.fontSizePt || 10.5) / 72 * 96;
+      const lineSpacing = settings.lineSpacing || 1.0;
+      const lineAdvance = fontSize * lineSpacing;
+      const roleLabelHeight = lineAdvance * 5.5;
+      const recordGap = lineAdvance * 1.0;
+      const contentWidth = pageWidth - marginLeft - marginRight;
+      const contentHeight = pageHeight - marginTop - marginBottom;
+      const bodyHeight = contentHeight - roleLabelHeight;
+      const bodyCharsPerColumn = Math.max(1, Math.floor(bodyHeight / lineAdvance));
+
+      wrap.innerHTML = '';
+      const page = document.createElement('div');
+      page.className = 'page';
+      page.style.width = `${pageWidth}px`;
+      page.style.height = `${pageHeight}px`;
+      page.style.setProperty('--font-size', `${fontSize}px`);
+      page.style.setProperty('--line-advance', `${lineAdvance}px`);
+      page.style.setProperty('--font-family', settings.fontFamily || '"游明朝", "Yu Mincho", "MS Mincho", serif');
+
+      const content = document.createElement('div');
+      content.className = 'content';
+      content.style.top = `${marginTop}px`;
+      content.style.left = `${marginLeft}px`;
+      content.style.width = `${contentWidth}px`;
+      content.style.height = `${contentHeight}px`;
+      content.style.gap = `${recordGap}px`;
+
+      for (const record of doc.records || []) {
+        const bodyText = record.body || '';
+        const columns = buildColumns(bodyText, bodyCharsPerColumn);
+        const recordContainer = document.createElement('div');
+        recordContainer.className = 'record';
+
+        columns.forEach((columnText, index) => {
+          const column = document.createElement('div');
+          column.className = 'column';
+          column.style.width = `${lineAdvance}px`;
+          column.style.height = `${contentHeight}px`;
+
+          if (index === 0) {
+            const role = document.createElement('div');
+            role.className = 'role';
+            role.style.height = `${roleLabelHeight}px`;
+            role.textContent = record.roleName || '';
+            column.appendChild(role);
+          } else {
+            const spacer = document.createElement('div');
+            spacer.style.height = `${roleLabelHeight}px`;
+            column.appendChild(spacer);
+          }
+
+          const body = document.createElement('div');
+          body.className = 'body';
+          body.style.height = `${bodyHeight}px`;
+          body.textContent = columnText;
+          column.appendChild(body);
+
+          recordContainer.appendChild(column);
+        });
+
+        content.appendChild(recordContainer);
+      }
+
+      page.appendChild(content);
+      wrap.appendChild(page);
     }
 
     if (window.chrome && window.chrome.webview) {
       window.chrome.webview.addEventListener('message', (event) => {
         renderDocument(event.data);
       });
-      status.textContent = 'WebView2 からの受信待ちです';
+      status.textContent = 'ドキュメント受信待ちです';
     } else {
       status.textContent = 'WebView2 で開いてください';
     }
