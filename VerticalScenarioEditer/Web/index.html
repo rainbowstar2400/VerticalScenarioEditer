@@ -48,12 +48,15 @@
     .role,
     .body {
       writing-mode: vertical-rl;
-      text-orientation: upright;
+      text-orientation: mixed;
       white-space: pre;
       line-height: var(--line-advance);
       font-size: var(--font-size);
       font-family: var(--font-family);
       color: var(--text);
+    }
+    .tcy {
+      text-combine-upright: all;
     }
     .status {
       font-size: 14px;
@@ -74,28 +77,125 @@
       return mm / 25.4 * 96;
     }
 
-    function buildColumns(text, maxCharsPerColumn) {
-      const columns = [];
-      let current = '';
-      for (const ch of text) {
+    const verticalGlyphMap = new Map([
+      ['、', '︑'],
+      ['。', '︒'],
+      ['，', '︐'],
+      ['：', '︓'],
+      ['；', '︔'],
+      ['！', '︕'],
+      ['？', '︖'],
+      ['…', '︙'],
+      ['（', '︵'],
+      ['）', '︶'],
+      ['｛', '︷'],
+      ['｝', '︸'],
+      ['〔', '︹'],
+      ['〕', '︺'],
+      ['【', '︻'],
+      ['】', '︼'],
+      ['〈', '︿'],
+      ['〉', '﹀'],
+      ['《', '︽'],
+      ['》', '︾'],
+      ['「', '﹁'],
+      ['」', '﹂'],
+      ['『', '﹃'],
+      ['』', '﹄'],
+      ['［', '﹇'],
+      ['］', '﹈'],
+    ]);
+
+    function mapVerticalGlyph(ch) {
+      return verticalGlyphMap.get(ch) || ch;
+    }
+
+    function isAsciiAlnum(ch) {
+      return /[0-9A-Za-z]/.test(ch);
+    }
+
+    function tokenizeText(text) {
+      const tokens = [];
+      let index = 0;
+      while (index < text.length) {
+        const ch = text[index];
         if (ch === '\r') {
+          index += 1;
           continue;
         }
         if (ch === '\n') {
-          columns.push(current);
-          current = '';
+          tokens.push({ type: 'newline' });
+          index += 1;
           continue;
         }
-        current += ch;
-        if (current.length >= maxCharsPerColumn) {
-          columns.push(current);
-          current = '';
+        if (isAsciiAlnum(ch)) {
+          let run = ch;
+          index += 1;
+          while (index < text.length && isAsciiAlnum(text[index]) && run.length < 4) {
+            run += text[index];
+            index += 1;
+          }
+          if (run.length >= 2) {
+            tokens.push({ type: 'tcy', text: run });
+          } else {
+            tokens.push({ type: 'text', text: mapVerticalGlyph(run) });
+          }
+          continue;
         }
+        tokens.push({ type: 'text', text: mapVerticalGlyph(ch) });
+        index += 1;
       }
-      if (current.length > 0 || columns.length === 0) {
-        columns.push(current);
+      return tokens;
+    }
+
+    function buildColumns(tokens, maxSlots) {
+      const columns = [[]];
+      let usedSlots = 0;
+      for (const token of tokens) {
+        if (token.type === 'newline') {
+          columns.push([]);
+          usedSlots = 0;
+          continue;
+        }
+        if (usedSlots >= maxSlots) {
+          columns.push([]);
+          usedSlots = 0;
+        }
+        columns[columns.length - 1].push(token);
+        usedSlots += 1;
+      }
+      if (columns.length === 0) {
+        columns.push([]);
       }
       return columns;
+    }
+
+    function takeTokens(tokens, maxSlots) {
+      const result = [];
+      let usedSlots = 0;
+      for (const token of tokens) {
+        if (token.type === 'newline') {
+          break;
+        }
+        if (usedSlots >= maxSlots) {
+          break;
+        }
+        result.push(token);
+        usedSlots += 1;
+      }
+      return result;
+    }
+
+    function appendTokens(container, tokens) {
+      container.textContent = '';
+      for (const token of tokens) {
+        const span = document.createElement('span');
+        if (token.type === 'tcy') {
+          span.className = 'tcy';
+        }
+        span.textContent = token.text;
+        container.appendChild(span);
+      }
     }
 
     function renderDocument(message) {
@@ -120,6 +220,7 @@
       const contentHeight = pageHeight - marginTop - marginBottom;
       const bodyHeight = contentHeight - roleLabelHeight;
       const bodyCharsPerColumn = Math.max(1, Math.floor(bodyHeight / lineAdvance));
+      const roleCharsPerColumn = Math.max(1, Math.floor(roleLabelHeight / lineAdvance));
 
       wrap.innerHTML = '';
       const page = document.createElement('div');
@@ -140,7 +241,9 @@
 
       for (const record of doc.records || []) {
         const bodyText = record.body || '';
-        const columns = buildColumns(bodyText, bodyCharsPerColumn);
+        const bodyTokens = tokenizeText(bodyText);
+        const columns = buildColumns(bodyTokens, bodyCharsPerColumn);
+        const roleTokens = tokenizeText(record.roleName || '');
         const recordContainer = document.createElement('div');
         recordContainer.className = 'record';
 
@@ -154,7 +257,7 @@
             const role = document.createElement('div');
             role.className = 'role';
             role.style.height = `${roleLabelHeight}px`;
-            role.textContent = record.roleName || '';
+            appendTokens(role, takeTokens(roleTokens, roleCharsPerColumn));
             column.appendChild(role);
           } else {
             const spacer = document.createElement('div');
@@ -165,7 +268,7 @@
           const body = document.createElement('div');
           body.className = 'body';
           body.style.height = `${bodyHeight}px`;
-          body.textContent = columnText;
+          appendTokens(body, columnText);
           column.appendChild(body);
 
           recordContainer.appendChild(column);
