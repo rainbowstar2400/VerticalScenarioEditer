@@ -195,8 +195,24 @@ public sealed class VerticalDocumentView : FrameworkElement
 
             var x = columnLeft + (columnAdvance - formatted.Width) / 2;
             var y = columnTop + index * columnAdvance;
-            dc.DrawText(formatted, new Point(x, y));
+            var charRect = new Rect(columnLeft, y, columnAdvance, columnAdvance);
+            if (ShouldRotate(text[index]))
+            {
+                var center = new Point(charRect.Left + charRect.Width / 2, charRect.Top + charRect.Height / 2);
+                dc.PushTransform(new RotateTransform(90, center.X, center.Y));
+                dc.DrawText(formatted, new Point(x, y));
+                dc.Pop();
+            }
+            else
+            {
+                dc.DrawText(formatted, new Point(x, y));
+            }
         }
+    }
+
+    private static bool ShouldRotate(char ch)
+    {
+        return ch <= 0x7F;
     }
 
     private sealed record DocumentLayout(Size Size, List<PageLayout> Pages, bool HasOverflow)
