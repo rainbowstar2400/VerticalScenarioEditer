@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        EnsureAtLeastOneRecord();
         UpdateTitle();
         Loaded += OnLoaded;
     }
@@ -54,17 +55,23 @@ public partial class MainWindow : Window
             return;
         }
 
+        EditorWebView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
         EditorWebView.NavigationCompleted += OnWebViewNavigationCompleted;
 
-        var htmlPath = Path.Combine(AppContext.BaseDirectory, "Web", "index.html");
-        if (File.Exists(htmlPath))
-        {
-            EditorWebView.Source = new Uri(htmlPath);
-        }
-        else
+        var webRoot = Path.Combine(AppContext.BaseDirectory, "Web");
+        var htmlPath = Path.Combine(webRoot, "index.html");
+        if (!Directory.Exists(webRoot) || !File.Exists(htmlPath))
         {
             EditorWebView.CoreWebView2.NavigateToString("<html lang='ja'><body><p>WebView2 の表示コンテンツが見つかりません。</p></body></html>");
+            return;
         }
+
+        EditorWebView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+            "app",
+            webRoot,
+            CoreWebView2HostResourceAccessKind.Allow);
+        EditorWebView.Source = new Uri("https://app/index.html");
+        MessageBox.Show(this, $"WebView2 読み込み先: {htmlPath}", "WebView2 デバッグ情報", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void OnFileOpenClick(object sender, RoutedEventArgs e)
@@ -83,6 +90,7 @@ public partial class MainWindow : Window
         {
             _document = DocumentFileService.Load(dialog.FileName);
             _currentFilePath = dialog.FileName;
+            EnsureAtLeastOneRecord();
             UpdateTitle();
         }
         catch (Exception ex)
@@ -159,6 +167,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        EnsureAtLeastOneRecord();
         var payload = new
         {
             type = "initDocument",
@@ -183,5 +192,107 @@ public partial class MainWindow : Window
         });
 
         EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
+    }
+
+    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(e.WebMessageAsJson);
+            if (!document.RootElement.TryGetProperty("type", out var typeProperty))
+            {
+                return;
+            }
+
+            var type = typeProperty.GetString();
+            switch (type)
+            {
+                case "documentReady":
+                    _isWebContentReady = true;
+                    SendDocumentToWebView();
+                    break;
+                case "inputPatch":
+                    ApplyInputPatch(document.RootElement);
+                    break;
+                case "command":
+                    ApplyCommand(document.RootElement);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "WebView2 メッセージの処理に失敗しました", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void ApplyInputPatch(JsonElement root)
+    {
+        if (!root.TryGetProperty("recordIndex", out var indexProperty) || !indexProperty.TryGetInt32(out var recordIndex))
+        {
+            return;
+        }
+
+        if (recordIndex < 0 || recordIndex >= _document.Records.Count)
+        {
+            return;
+        }
+
+        if (!root.TryGetProperty("field", out var fieldProperty))
+        {
+            return;
+        }
+
+        var field = fieldProperty.GetString();
+        var text = root.TryGetProperty("text", out var textProperty) ? textProperty.GetString() ?? string.Empty : string.Empty;
+
+        var record = _document.Records[recordIndex];
+        if (field == "roleName")
+        {
+            record.RoleName = text;
+        }
+        else if (field == "body")
+        {
+            record.Body = text;
+        }
+    }
+
+    private void ApplyCommand(JsonElement root)
+    {
+        if (!root.TryGetProperty("name", out var nameProperty))
+        {
+            return;
+        }
+
+        var name = nameProperty.GetString();
+        if (!root.TryGetProperty("recordIndex", out var indexProperty) || !indexProperty.TryGetInt32(out var recordIndex))
+        {
+            return;
+        }
+
+        if (recordIndex < 0 || recordIndex >= _document.Records.Count)
+        {
+            return;
+        }
+
+        switch (name)
+        {
+            case "insertAfter":
+                _document.Records.Insert(recordIndex + 1, new ScriptRecord());
+                SendDocumentToWebView();
+                break;
+            case "deleteRecord":
+                _document.Records.RemoveAt(recordIndex);
+                EnsureAtLeastOneRecord();
+                SendDocumentToWebView();
+                break;
+        }
+    }
+
+    private void EnsureAtLeastOneRecord()
+    {
+        if (_document.Records.Count == 0)
+        {
+            _document.Records.Add(new ScriptRecord());
+        }
     }
 }

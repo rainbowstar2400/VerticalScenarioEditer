@@ -55,6 +55,14 @@
       font-family: var(--font-family);
       color: var(--text);
     }
+    .role[contenteditable],
+    .body[contenteditable] {
+      outline: none;
+    }
+    .role[contenteditable]:focus,
+    .body[contenteditable]:focus {
+      background: #f7f2e8;
+    }
     .tcy {
       text-combine-upright: all;
     }
@@ -72,42 +80,49 @@
   <script>
     const status = document.getElementById('status');
     const wrap = document.querySelector('.wrap');
+    let currentDocument = null;
+    let pendingFocus = null;
 
     function mmToPx(mm) {
       return mm / 25.4 * 96;
     }
 
     const verticalGlyphMap = new Map([
-      ['、', '︑'],
-      ['。', '︒'],
-      ['，', '︐'],
-      ['：', '︓'],
-      ['；', '︔'],
-      ['！', '︕'],
-      ['？', '︖'],
-      ['…', '︙'],
-      ['（', '︵'],
-      ['）', '︶'],
-      ['｛', '︷'],
-      ['｝', '︸'],
-      ['〔', '︹'],
-      ['〕', '︺'],
-      ['【', '︻'],
-      ['】', '︼'],
-      ['〈', '︿'],
-      ['〉', '﹀'],
-      ['《', '︽'],
-      ['》', '︾'],
-      ['「', '﹁'],
-      ['」', '﹂'],
-      ['『', '﹃'],
-      ['』', '﹄'],
-      ['［', '﹇'],
-      ['］', '﹈'],
+      ['、', '\uFE11'],
+      ['。', '\uFE12'],
+      ['，', '\uFE10'],
+      ['：', '\uFE13'],
+      ['；', '\uFE14'],
+      ['！', '\uFE15'],
+      ['？', '\uFE16'],
+      ['…', '\uFE19'],
+      ['（', '\uFE35'],
+      ['）', '\uFE36'],
+      ['｛', '\uFE37'],
+      ['｝', '\uFE38'],
+      ['〔', '\uFE39'],
+      ['〕', '\uFE3A'],
+      ['【', '\uFE3B'],
+      ['】', '\uFE3C'],
+      ['〈', '\uFE3F'],
+      ['〉', '\uFE40'],
+      ['《', '\uFE3D'],
+      ['》', '\uFE3E'],
+      ['「', '\uFE41'],
+      ['」', '\uFE42'],
+      ['『', '\uFE43'],
+      ['』', '\uFE44'],
+      ['［', '\uFE47'],
+      ['］', '\uFE48'],
     ]);
+    const reverseVerticalGlyphMap = new Map(Array.from(verticalGlyphMap.entries()).map(([key, value]) => [value, key]));
 
     function mapVerticalGlyph(ch) {
       return verticalGlyphMap.get(ch) || ch;
+    }
+
+    function mapHorizontalGlyph(ch) {
+      return reverseVerticalGlyphMap.get(ch) || ch;
     }
 
     function isAsciiAlnum(ch) {
@@ -198,12 +213,99 @@
       }
     }
 
+    function normalizeTextFromElement(element) {
+      const raw = element.innerText.replace(/\r\n/g, '\n');
+      const normalized = raw.replace(/\n$/, '');
+      let result = '';
+      for (const ch of normalized) {
+        result += mapHorizontalGlyph(ch);
+      }
+      return result;
+    }
+
+    function getRecordElement(recordIndex) {
+      return wrap.querySelector(`.record[data-record-index=\"${recordIndex}\"]`);
+    }
+
+    function getRoleElement(recordElement) {
+      return recordElement?.querySelector('.role[data-field="roleName"]') || null;
+    }
+
+    function getBodyElements(recordElement) {
+      if (!recordElement) {
+        return [];
+      }
+      return Array.from(recordElement.querySelectorAll('.body[data-field="body"]'));
+    }
+
+    function getBodyText(recordElement) {
+      const bodies = getBodyElements(recordElement);
+      return bodies.map(normalizeTextFromElement).join('');
+    }
+
+    function getCaretOffset(element) {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return 0;
+      }
+      const range = selection.getRangeAt(0);
+      const preRange = range.cloneRange();
+      preRange.selectNodeContents(element);
+      preRange.setEnd(range.endContainer, range.endOffset);
+      return preRange.toString().length;
+    }
+
+    function isCurrentLineEmpty(element) {
+      const text = element.innerText.replace(/\r\n/g, '\n');
+      const caret = getCaretOffset(element);
+      const lineStart = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
+      const lineEndCandidate = text.indexOf('\n', caret);
+      const lineEnd = lineEndCandidate === -1 ? text.length : lineEndCandidate;
+      const lineText = text.slice(lineStart, lineEnd).trim();
+      return lineText.length === 0;
+    }
+
+    function focusElement(element) {
+      if (!element) {
+        return;
+      }
+      element.focus();
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      range.collapse(false);
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+
+    function focusRecord(recordIndex, field) {
+      const recordElement = getRecordElement(recordIndex);
+      if (!recordElement) {
+        return;
+      }
+      if (field === 'roleName') {
+        focusElement(getRoleElement(recordElement));
+      } else {
+        const bodies = getBodyElements(recordElement);
+        focusElement(bodies[0]);
+      }
+    }
+
+    function postMessage(message) {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage(message);
+      }
+    }
+
     function renderDocument(message) {
       if (!message || message.type !== 'initDocument') {
         return;
       }
 
       const doc = message.document || { records: [] };
+      currentDocument = doc;
       const settings = message.settings || {};
       const pageWidth = mmToPx(settings.pageWidthMm || 210);
       const pageHeight = mmToPx(settings.pageHeightMm || 297);
@@ -239,13 +341,15 @@
       content.style.height = `${contentHeight}px`;
       content.style.gap = `${recordGap}px`;
 
-      for (const record of doc.records || []) {
+      for (let recordIndex = 0; recordIndex < (doc.records || []).length; recordIndex += 1) {
+        const record = doc.records[recordIndex] || {};
         const bodyText = record.body || '';
         const bodyTokens = tokenizeText(bodyText);
         const columns = buildColumns(bodyTokens, bodyCharsPerColumn);
         const roleTokens = tokenizeText(record.roleName || '');
         const recordContainer = document.createElement('div');
         recordContainer.className = 'record';
+        recordContainer.dataset.recordIndex = `${recordIndex}`;
 
         columns.forEach((columnText, index) => {
           const column = document.createElement('div');
@@ -257,6 +361,9 @@
             const role = document.createElement('div');
             role.className = 'role';
             role.style.height = `${roleLabelHeight}px`;
+            role.setAttribute('contenteditable', 'true');
+            role.dataset.field = 'roleName';
+            role.dataset.recordIndex = recordContainer.dataset.recordIndex;
             appendTokens(role, takeTokens(roleTokens, roleCharsPerColumn));
             column.appendChild(role);
           } else {
@@ -268,6 +375,9 @@
           const body = document.createElement('div');
           body.className = 'body';
           body.style.height = `${bodyHeight}px`;
+          body.setAttribute('contenteditable', 'true');
+          body.dataset.field = 'body';
+          body.dataset.recordIndex = recordContainer.dataset.recordIndex;
           appendTokens(body, columnText);
           column.appendChild(body);
 
@@ -279,9 +389,113 @@
 
       page.appendChild(content);
       wrap.appendChild(page);
+
+      if (pendingFocus) {
+        focusRecord(pendingFocus.recordIndex, pendingFocus.field);
+        pendingFocus = null;
+      }
+    }
+
+    function handleInput(event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const field = target.dataset.field;
+      const recordIndex = Number(target.dataset.recordIndex);
+      if (!field || Number.isNaN(recordIndex)) {
+        return;
+      }
+      const recordElement = getRecordElement(recordIndex);
+      if (!recordElement) {
+        return;
+      }
+      const text = field === 'roleName'
+        ? normalizeTextFromElement(target)
+        : getBodyText(recordElement);
+      postMessage({
+        type: 'inputPatch',
+        recordIndex,
+        field,
+        text,
+      });
+    }
+
+    function handleKeyDown(event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const field = target.dataset.field;
+      const recordIndex = Number(target.dataset.recordIndex);
+      if (!field || Number.isNaN(recordIndex)) {
+        return;
+      }
+
+      const recordElement = getRecordElement(recordIndex);
+      if (!recordElement) {
+        return;
+      }
+      const roleElement = getRoleElement(recordElement);
+      const bodyElements = getBodyElements(recordElement);
+
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        if (event.shiftKey) {
+          focusElement(roleElement);
+        } else {
+          focusElement(bodyElements[0]);
+        }
+        return;
+      }
+
+      if (event.key === 'Enter' && field === 'roleName') {
+        event.preventDefault();
+        focusElement(bodyElements[0]);
+        return;
+      }
+
+      if (event.key === 'Enter' && field === 'body') {
+        if (event.ctrlKey) {
+          event.preventDefault();
+          const nextIndex = recordIndex + 1;
+          if (currentDocument && currentDocument.records && nextIndex < currentDocument.records.length) {
+            focusRecord(nextIndex, 'roleName');
+          } else {
+            pendingFocus = { recordIndex: nextIndex, field: 'roleName' };
+            postMessage({ type: 'command', name: 'insertAfter', recordIndex });
+          }
+          return;
+        }
+        if (!event.shiftKey && isCurrentLineEmpty(target)) {
+          event.preventDefault();
+          const nextIndex = recordIndex + 1;
+          if (currentDocument && currentDocument.records && nextIndex < currentDocument.records.length) {
+            focusRecord(nextIndex, 'body');
+          } else {
+            pendingFocus = { recordIndex: nextIndex, field: 'body' };
+            postMessage({ type: 'command', name: 'insertAfter', recordIndex });
+          }
+          return;
+        }
+      }
+
+      if (event.key === 'Backspace') {
+        const roleText = roleElement ? normalizeTextFromElement(roleElement).trim() : '';
+        const bodyText = getBodyText(recordElement).trim();
+        if (roleText.length === 0 && bodyText.length === 0) {
+          event.preventDefault();
+          const focusIndex = Math.max(0, recordIndex - 1);
+          pendingFocus = { recordIndex: focusIndex, field: 'body' };
+          postMessage({ type: 'command', name: 'deleteRecord', recordIndex });
+        }
+      }
     }
 
     if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.postMessage({ type: 'documentReady' });
+      wrap.addEventListener('input', handleInput, true);
+      wrap.addEventListener('keydown', handleKeyDown, true);
       window.chrome.webview.addEventListener('message', (event) => {
         renderDocument(event.data);
       });
