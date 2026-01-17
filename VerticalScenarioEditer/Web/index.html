@@ -307,8 +307,8 @@
       const doc = message.document || { records: [] };
       currentDocument = doc;
       const settings = message.settings || {};
-      const pageWidth = mmToPx(settings.pageWidthMm || 210);
-      const pageHeight = mmToPx(settings.pageHeightMm || 297);
+      const pageWidth = mmToPx(settings.pageWidthMm || 297);
+      const pageHeight = mmToPx(settings.pageHeightMm || 210);
       const marginLeft = mmToPx(settings.marginLeftMm || 20);
       const marginRight = mmToPx(settings.marginRightMm || 20);
       const marginTop = mmToPx(settings.marginTopMm || 25);

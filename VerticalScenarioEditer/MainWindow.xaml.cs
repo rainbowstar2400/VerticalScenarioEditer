@@ -71,7 +71,6 @@ public partial class MainWindow : Window
             webRoot,
             CoreWebView2HostResourceAccessKind.Allow);
         EditorWebView.Source = new Uri("https://app/index.html");
-        MessageBox.Show(this, $"WebView2 読み込み先: {htmlPath}", "WebView2 デバッグ情報", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void OnFileOpenClick(object sender, RoutedEventArgs e)
