@@ -1,5 +1,8 @@
 using System;
+using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using VerticalScenarioEditer.Models;
 using VerticalScenarioEditer.Serialization;
@@ -19,7 +22,45 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         UpdateTitle();
-        DocumentView.Document = _document;
+        Loaded += OnLoaded;
+    }
+
+    private async void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        await InitializeWebViewAsync();
+    }
+
+    private async Task InitializeWebViewAsync()
+    {
+        try
+        {
+            await EditorWebView.EnsureCoreWebView2Async();
+        }
+        catch (WebView2RuntimeNotFoundException)
+        {
+            MessageBox.Show(
+                this,
+                "WebView2 Runtime が見つかりません。\nMicrosoft Edge WebView2 Runtime をインストールしてから再起動してください。",
+                "WebView2 Runtime 未導入",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "WebView2 の初期化に失敗しました", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        var htmlPath = Path.Combine(AppContext.BaseDirectory, "Web", "index.html");
+        if (File.Exists(htmlPath))
+        {
+            EditorWebView.Source = new Uri(htmlPath);
+        }
+        else
+        {
+            EditorWebView.CoreWebView2.NavigateToString("<html lang='ja'><body><p>WebView2 の表示コンテンツが見つかりません。</p></body></html>");
+        }
     }
 
     private void OnFileOpenClick(object sender, RoutedEventArgs e)
@@ -39,7 +80,6 @@ public partial class MainWindow : Window
             _document = DocumentFileService.Load(dialog.FileName);
             _currentFilePath = dialog.FileName;
             UpdateTitle();
-            DocumentView.Document = _document;
         }
         catch (Exception ex)
         {
@@ -81,7 +121,6 @@ public partial class MainWindow : Window
             DocumentFileService.Save(path, _document);
             _currentFilePath = path;
             UpdateTitle();
-            DocumentView.Document = _document;
         }
         catch (Exception ex)
         {
