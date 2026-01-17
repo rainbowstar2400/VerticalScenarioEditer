@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using VerticalScenarioEditer.Models;
@@ -17,6 +18,7 @@ public partial class MainWindow : Window
     private const string FileFilter = "縦書き脚本エディタ (*.vse)|*.vse|JSON (*.json)|*.json|すべてのファイル (*.*)|*.*";
     private DocumentState _document = DocumentState.CreateDefault();
     private string? _currentFilePath;
+    private bool _isWebContentReady;
 
     public MainWindow()
     {
@@ -52,6 +54,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        EditorWebView.NavigationCompleted += OnWebViewNavigationCompleted;
+
         var htmlPath = Path.Combine(AppContext.BaseDirectory, "Web", "index.html");
         if (File.Exists(htmlPath))
         {
@@ -85,6 +89,8 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(this, ex.Message, "読み込みに失敗しました", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+
+        SendDocumentToWebView();
     }
 
     private void OnFileSaveClick(object sender, RoutedEventArgs e)
@@ -132,5 +138,50 @@ public partial class MainWindow : Window
     {
         var fileLabel = string.IsNullOrWhiteSpace(_currentFilePath) ? "無題" : _currentFilePath;
         Title = $"縦書き脚本エディタ - {fileLabel}";
+    }
+
+    private void OnWebViewNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess)
+        {
+            MessageBox.Show(this, "WebView2 の読み込みに失敗しました。", "読み込みに失敗しました", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        _isWebContentReady = true;
+        SendDocumentToWebView();
+    }
+
+    private void SendDocumentToWebView()
+    {
+        if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            type = "initDocument",
+            document = _document,
+            settings = new
+            {
+                pageWidthMm = DocumentSettings.PageWidthMm,
+                pageHeightMm = DocumentSettings.PageHeightMm,
+                marginLeftMm = DocumentSettings.MarginLeftMm,
+                marginRightMm = DocumentSettings.MarginRightMm,
+                marginTopMm = DocumentSettings.MarginTopMm,
+                marginBottomMm = DocumentSettings.MarginBottomMm,
+                fontFamily = DocumentSettings.DefaultFontFamilyName,
+                fontSizePt = DocumentSettings.DefaultFontSizePt,
+                lineSpacing = DocumentSettings.LineSpacing
+            }
+        };
+
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+
+        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
     }
 }

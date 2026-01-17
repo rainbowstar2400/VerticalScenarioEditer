@@ -35,14 +35,44 @@
     .note {
       font-size: 14px;
       letter-spacing: 0.08em;
+      margin-bottom: 16px;
+    }
+    .payload {
+      width: 70%;
+      height: 55%;
+      overflow: auto;
+      background: #f7f7f7;
+      border: 1px solid #dedede;
+      padding: 12px;
+      font-size: 12px;
+      white-space: pre-wrap;
     }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="page">
-      <div class="note">WebView2 の準備中です</div>
+      <div class="note" id="status">WebView2 の準備中です</div>
+      <pre class="payload" id="payload" aria-live="polite"></pre>
     </div>
   </div>
+  <script>
+    const status = document.getElementById('status');
+    const payload = document.getElementById('payload');
+
+    function renderDocument(message) {
+      status.textContent = 'ドキュメントを受信しました';
+      payload.textContent = JSON.stringify(message, null, 2);
+    }
+
+    if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.addEventListener('message', (event) => {
+        renderDocument(event.data);
+      });
+      status.textContent = 'WebView2 からの受信待ちです';
+    } else {
+      status.textContent = 'WebView2 で開いてください';
+    }
+  </script>
 </body>
 </html>
