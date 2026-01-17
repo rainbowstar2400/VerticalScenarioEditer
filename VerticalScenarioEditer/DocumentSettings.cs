@@ -14,8 +14,8 @@ public static class DocumentSettings
     public const double RecordGapChars = 1.0;
     public const double PageGapDip = 24.0;
 
-    public const double PageWidthMm = 210.0;
-    public const double PageHeightMm = 297.0;
+    public const double PageWidthMm = 297.0;
+    public const double PageHeightMm = 210.0;
     public const double MarginLeftMm = 20.0;
     public const double MarginRightMm = 20.0;
     public const double MarginTopMm = 25.0;
