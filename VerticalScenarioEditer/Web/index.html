@@ -39,18 +39,27 @@
     .record {
       position: relative;
       display: block;
+      flex: 0 0 auto;
     }
     .role,
     .body {
       writing-mode: vertical-rl;
       text-orientation: mixed;
-      white-space: pre;
       line-height: var(--line-advance);
       font-size: var(--font-size);
       font-family: var(--font-family);
       color: var(--text);
     }
+    .role {
+      white-space: pre;
+    }
     .body {
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-break: strict;
+      box-sizing: border-box;
+      padding-top: var(--role-height);
+      min-width: var(--line-advance);
     }
     .role[contenteditable],
     .body[contenteditable] {
@@ -62,9 +71,6 @@
     }
     .tcy {
       text-combine-upright: all;
-    }
-    .column-break {
-      break-after: column;
     }
     .status {
       font-size: 14px;
@@ -83,6 +89,9 @@
     let currentDocument = null;
     let lastSettings = null;
     let pendingFocus = null;
+    let layoutState = null;
+    let layoutUpdateHandle = null;
+    const layoutUpdateQueue = new Set();
 
     function mmToPx(mm) {
       return mm / 25.4 * 96;
@@ -180,31 +189,40 @@
       return result;
     }
 
-    function countColumns(tokens, maxSlots) {
-      let columns = 1;
-      let usedSlots = 0;
-      for (const token of tokens) {
-        if (token.type === 'newline') {
-          columns += 1;
-          usedSlots = 0;
-          continue;
-        }
-        if (usedSlots >= maxSlots) {
-          columns += 1;
-          usedSlots = 0;
-        }
-        usedSlots += 1;
+    function scheduleLayoutUpdate(recordIndex) {
+      layoutUpdateQueue.add(recordIndex);
+      if (layoutUpdateHandle) {
+        return;
       }
-      return Math.max(1, columns);
+      layoutUpdateHandle = requestAnimationFrame(() => {
+        layoutUpdateHandle = null;
+        for (const index of layoutUpdateQueue) {
+          const recordElement = getRecordElement(index);
+          updateRecordWidth(recordElement);
+        }
+        layoutUpdateQueue.clear();
+      });
+    }
+
+    function updateRecordWidth(recordElement) {
+      if (!recordElement || !layoutState) {
+        return;
+      }
+      const bodyElement = getBodyElement(recordElement);
+      if (!bodyElement) {
+        return;
+      }
+      const measuredWidth = Math.ceil(bodyElement.scrollWidth);
+      const width = Math.max(layoutState.lineAdvance, measuredWidth);
+      recordElement.style.width = `${width}px`;
+      bodyElement.style.width = `${width}px`;
     }
 
     function appendTokens(container, tokens) {
       container.textContent = '';
       for (const token of tokens) {
         if (token.type === 'newline') {
-          const br = document.createElement('br');
-          br.className = 'column-break';
-          container.appendChild(br);
+          container.appendChild(document.createTextNode('\n'));
           continue;
         }
         const span = document.createElement('span');
@@ -219,9 +237,7 @@
     function extractText(node) {
       let text = '';
       function appendLineBreak() {
-        if (text.length > 0 && !text.endsWith('\n')) {
-          text += '\n';
-        }
+        text += '\n';
       }
       function walk(current) {
         if (current.nodeType === Node.TEXT_NODE) {
@@ -237,7 +253,6 @@
           return;
         }
         if (tag === 'DIV' || tag === 'P') {
-          appendLineBreak();
           Array.from(current.childNodes).forEach(walk);
           appendLineBreak();
           return;
@@ -249,7 +264,7 @@
     }
 
     function normalizeText(text) {
-      return text.replace(/\r/g, '').replace(/[\u200B\u00A0]/g, '');
+      return text.replace(/\r/g, '').replace(/[\u200B\u00A0\uFEFF\u2060]/g, '');
     }
 
     function normalizeTextFromElement(element) {
@@ -363,6 +378,9 @@
         field,
         text,
       });
+      if (field === 'body') {
+        scheduleLayoutUpdate(recordIndex);
+      }
     }
 
     function renderDocument(message) {
@@ -390,7 +408,10 @@
       const contentHeight = pageHeight - marginTop - marginBottom;
       const bodyHeight = contentHeight - roleLabelHeight;
       const roleCharsPerColumn = Math.max(1, Math.floor(roleLabelHeight / lineAdvance));
-      const bodyCharsPerColumn = Math.max(1, Math.floor(bodyHeight / lineAdvance));
+      layoutState = {
+        lineAdvance,
+        contentHeight,
+      };
 
       wrap.innerHTML = '';
       const page = document.createElement('div');
@@ -399,6 +420,7 @@
       page.style.height = `${pageHeight}px`;
       page.style.setProperty('--font-size', `${fontSize}px`);
       page.style.setProperty('--line-advance', `${lineAdvance}px`);
+      page.style.setProperty('--role-height', `${roleLabelHeight}px`);
       page.style.setProperty('--font-family', settings.fontFamily || '"游明朝", "Yu Mincho", "MS Mincho", serif');
 
       const content = document.createElement('div');
@@ -414,25 +436,18 @@
         const bodyText = record.body || '';
         const bodyTokens = tokenizeText(bodyText);
         const roleTokens = tokenizeText(record.roleName || '');
-        const bodyColumnCount = countColumns(bodyTokens, bodyCharsPerColumn);
-        const recordWidth = bodyColumnCount * lineAdvance;
+        const recordWidth = lineAdvance;
 
         const recordContainer = document.createElement('div');
         recordContainer.className = 'record';
         recordContainer.dataset.recordIndex = `${recordIndex}`;
-        recordContainer.style.width = `${recordWidth}px`;
         recordContainer.style.height = `${contentHeight}px`;
+        recordContainer.style.width = `${recordWidth}px`;
 
         const body = document.createElement('div');
         body.className = 'body';
         body.style.height = `${contentHeight}px`;
         body.style.width = `${recordWidth}px`;
-        body.style.columnWidth = `${lineAdvance}px`;
-        body.style.columnGap = '0px';
-        body.style.columnFill = 'auto';
-        body.style.columnCount = `${bodyColumnCount}`;
-        body.style.boxSizing = 'border-box';
-        body.style.paddingTop = `${roleLabelHeight}px`;
         body.setAttribute('contenteditable', 'true');
         body.dataset.field = 'body';
         body.dataset.recordIndex = recordContainer.dataset.recordIndex;
@@ -457,6 +472,11 @@
 
       page.appendChild(content);
       wrap.appendChild(page);
+
+      requestAnimationFrame(() => {
+        const recordElements = wrap.querySelectorAll('.record');
+        recordElements.forEach((recordElement) => updateRecordWidth(recordElement));
+      });
 
       if (pendingFocus) {
         focusRecord(pendingFocus.recordIndex, pendingFocus.field);
