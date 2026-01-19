@@ -14,6 +14,7 @@
                 <MenuItem Header="上書き保存" Click="OnFileSaveClick" />
                 <MenuItem Header="名前をつけて保存..." Click="OnFileSaveAsClick" />
                 <Separator />
+                <MenuItem Header="PDF出力..." Click="OnExportPdfClick" />
                 <MenuItem Header="テキスト書き出し..." Click="OnExportTextClick" />
             </MenuItem>
             <MenuItem Header="_編集">

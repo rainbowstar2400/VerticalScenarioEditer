@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private int _currentPage = 1;
     private int _totalPages = 1;
     private bool _hasLayoutStatus;
+    private bool _hasOverflow;
 
     public MainWindow()
     {
@@ -298,6 +299,7 @@ public partial class MainWindow : Window
                 fontSizePt = DocumentSettings.DefaultFontSizePt,
                 lineSpacing = DocumentSettings.LineSpacing,
                 pageGapPx = DocumentSettings.PageGapDip,
+                pageNumberEnabled = _document.PageNumberEnabled,
                 zoomScale = _appSettings.ZoomScale
             }
         };
@@ -555,6 +557,49 @@ public partial class MainWindow : Window
         ZoomSlider.Value = Math.Clamp(next, ZoomSlider.Minimum, ZoomSlider.Maximum);
     }
 
+    private async void OnExportPdfClick(object sender, RoutedEventArgs e)
+    {
+        if (_hasOverflow)
+        {
+            System.Windows.MessageBox.Show(this, "警告: 1ページに収まらないレコードがあるため、PDF出力を停止しました。", "PDF出力を停止しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+
+        if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
+        {
+            System.Windows.MessageBox.Show(this, "WebView2 が準備できていません。", "PDF出力を停止しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            return;
+        }
+
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "PDF (*.pdf)|*.pdf|すべてのファイル (*.*)|*.*",
+            DefaultExt = ".pdf"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var settings = EditorWebView.CoreWebView2.Environment.CreatePrintSettings();
+            settings.ShouldPrintBackgrounds = true;
+            settings.Orientation = CoreWebView2PrintOrientation.Landscape;
+            TrySetPdfPageSize(settings, 11.69, 8.27);
+            var success = await EditorWebView.CoreWebView2.PrintToPdfAsync(dialog.FileName, settings);
+            if (!success)
+            {
+                System.Windows.MessageBox.Show(this, "PDF出力に失敗しました。", "PDF出力に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "PDF出力に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+    }
+
     private void ApplyLayoutStatus(JsonElement root)
     {
         if (root.TryGetProperty("totalPages", out var totalProperty) && totalProperty.TryGetInt32(out var totalPages))
@@ -567,8 +612,28 @@ public partial class MainWindow : Window
             _currentPage = Math.Clamp(currentPage, 1, _totalPages);
         }
 
+        if (root.TryGetProperty("overflowCount", out var overflowProperty) && overflowProperty.TryGetInt32(out var overflowCount))
+        {
+            _hasOverflow = overflowCount > 0;
+        }
+
         _hasLayoutStatus = true;
         UpdateStatusBar();
+    }
+
+    private static void TrySetPdfPageSize(CoreWebView2PrintSettings settings, double widthInches, double heightInches)
+    {
+        var type = settings.GetType();
+        var widthProperty = type.GetProperty("PageWidth");
+        var heightProperty = type.GetProperty("PageHeight");
+        if (widthProperty != null && widthProperty.CanWrite)
+        {
+            widthProperty.SetValue(settings, widthInches);
+        }
+        if (heightProperty != null && heightProperty.CanWrite)
+        {
+            heightProperty.SetValue(settings, heightInches);
+        }
     }
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)

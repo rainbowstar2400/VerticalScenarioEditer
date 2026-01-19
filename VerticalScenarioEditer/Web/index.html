@@ -39,20 +39,59 @@
       position: relative;
       overflow: hidden;
     }
+    .page-number {
+      position: absolute;
+      bottom: 10px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      color: #444444;
+    }
     .content {
       position: absolute;
       display: flex;
       flex-direction: row-reverse;
       align-items: flex-start;
-      background-image: repeating-linear-gradient(
-        to left,
-        rgba(0, 0, 0, 0.08) 0px,
-        rgba(0, 0, 0, 0.08) 1px,
-        transparent 1px,
-        transparent var(--line-advance)
-      );
-      background-size: var(--line-advance) 100%;
-      background-position: right top;
+    }
+    @media print {
+      html, body {
+        background: #ffffff;
+        margin: 0;
+        padding: 0;
+      }
+      .wrap {
+        overflow: visible;
+        padding: 0;
+      }
+      .pages {
+        gap: 0;
+      }
+      .page {
+        box-shadow: none;
+        border: none;
+        width: 297mm;
+        height: 210mm;
+        page-break-after: always;
+      }
+      .page:last-child {
+        page-break-after: auto;
+      }
+      .content {
+        background-image: none;
+      }
+      .page-number {
+        color: #000000;
+      }
+      ::-webkit-scrollbar {
+        width: 0 !important;
+        height: 0 !important;
+      }
+    }
+    @page {
+      size: A4 landscape;
+      margin: 0;
     }
     .record {
       position: relative;
@@ -271,6 +310,15 @@
       content.style.width = `${layoutState.contentWidth}px`;
       content.style.height = `${layoutState.contentHeight}px`;
       content.style.gap = `${layoutState.recordGap}px`;
+      content.style.backgroundImage = `repeating-linear-gradient(
+        to left,
+        rgba(0, 0, 0, 0.08) 0px,
+        rgba(0, 0, 0, 0.08) 1px,
+        transparent 1px,
+        transparent ${layoutState.lineAdvance}px
+      )`;
+      content.style.backgroundSize = `${layoutState.lineAdvance}px 100%`;
+      content.style.backgroundPosition = 'right top';
 
       page.appendChild(content);
       return { page, content };
@@ -289,6 +337,7 @@
       let { page, content } = createPage();
       let usedWidth = 0;
       let pageIndex = 0;
+      page.dataset.pageIndex = `${pageIndex}`;
 
       recordElements.forEach((recordElement, index) => {
         recordElement.classList.remove('overflow');
@@ -306,6 +355,7 @@
           pagesHost.appendChild(page);
           pageIndex += 1;
           ({ page, content } = createPage());
+          page.dataset.pageIndex = `${pageIndex}`;
           usedWidth = 0;
         }
 
@@ -316,7 +366,34 @@
 
       pagesHost.appendChild(page);
       totalPages = Math.max(1, pageIndex + 1);
+      updatePageNumbers();
       sendLayoutStatus();
+    }
+
+    function updatePageNumbers() {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+      const pages = Array.from(pagesHost.querySelectorAll('.page'));
+      pages.forEach((page) => {
+        const index = Number(page.dataset.pageIndex || '0');
+        const existing = page.querySelector('.page-number');
+        if (!layoutState.pageNumberEnabled) {
+          if (existing) {
+            existing.remove();
+          }
+          return;
+        }
+        const numberText = `${index + 1}`;
+        if (existing) {
+          existing.textContent = numberText;
+          return;
+        }
+        const label = document.createElement('div');
+        label.className = 'page-number';
+        label.textContent = numberText;
+        page.appendChild(label);
+      });
     }
 
     function getFocusedRecordIndex() {
@@ -687,6 +764,7 @@
       const marginTop = mmToPx(settings.marginTopMm || 25);
       const marginBottom = mmToPx(settings.marginBottomMm || 25);
       const pageGap = settings.pageGapPx || 24;
+      const pageNumberEnabled = settings.pageNumberEnabled !== false;
       const fontSize = (settings.fontSizePt || 10.5) / 72 * 96;
       const lineSpacing = settings.lineSpacing || 1.0;
       const lineAdvance = fontSize * lineSpacing;
@@ -708,6 +786,8 @@
         lineAdvance,
         roleLabelHeight,
         fontFamily: settings.fontFamily || '"游明朝", "Yu Mincho", "MS Mincho", serif',
+        pageNumberEnabled,
+        pageGap,
       };
 
       wrap.innerHTML = '';

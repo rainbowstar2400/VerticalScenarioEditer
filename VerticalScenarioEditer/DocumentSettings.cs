@@ -9,17 +9,17 @@ public static class DocumentSettings
 {
     public const string DefaultFontFamilyName = "游明朝";
     public const double DefaultFontSizePt = 10.5;
-    public const double LineSpacing = 1.0;
+    public const double LineSpacing = 12.4 / 10.5;
     public const double RoleLabelHeightChars = 5.5;
     public const double RecordGapChars = 1.0;
     public const double PageGapDip = 24.0;
 
     public const double PageWidthMm = 297.0;
     public const double PageHeightMm = 210.0;
-    public const double MarginLeftMm = 20.0;
-    public const double MarginRightMm = 20.0;
-    public const double MarginTopMm = 25.0;
-    public const double MarginBottomMm = 25.0;
+    public const double MarginLeftMm = 21.1;
+    public const double MarginRightMm = 21.1;
+    public const double MarginTopMm = 25.4;
+    public const double MarginBottomMm = 25.4;
 
     public static double PageWidthDip => MmToDip(PageWidthMm);
     public static double PageHeightDip => MmToDip(PageHeightMm);
