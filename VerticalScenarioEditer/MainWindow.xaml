@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
+        PreviewMouseWheel="OnWindowPreviewMouseWheel"
         Title="縦書き脚本エディタ" Height="900" Width="1200" Background="#F0F0F0">
     <DockPanel>
         <Menu DockPanel.Dock="Top">
@@ -13,6 +14,30 @@
                 <MenuItem Header="_保存" Click="OnFileSaveClick" />
             </MenuItem>
         </Menu>
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="CharCountText" Text="文字数: 0" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock x:Name="PageInfoText" Text="ページ: -" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="表示倍率:" Margin="0,0,6,0" />
+                    <TextBlock x:Name="ZoomValueText" Text="100%" Margin="0,0,10,0" />
+                    <Slider x:Name="ZoomSlider"
+                            Width="160"
+                            Minimum="0.5"
+                            Maximum="2.0"
+                            SmallChange="0.05"
+                            LargeChange="0.1"
+                            ValueChanged="OnZoomSliderValueChanged"
+                            PreviewMouseWheel="OnZoomSliderMouseWheel" />
+                </StackPanel>
+            </StatusBarItem>
+        </StatusBar>
         <Grid Margin="24">
             <wv2:WebView2 x:Name="EditorWebView" />
         </Grid>

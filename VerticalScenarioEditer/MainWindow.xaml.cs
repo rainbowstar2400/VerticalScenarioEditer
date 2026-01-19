@@ -21,15 +21,20 @@ public partial class MainWindow : Window
     private string? _currentFilePath;
     private bool _isWebContentReady;
     private readonly AppSettings _appSettings;
+    private bool _isUiReady;
 
     public MainWindow()
     {
-        InitializeComponent();
         _appSettings = AppSettingsStore.Load();
+        InitializeComponent();
+        _isUiReady = true;
         EnsureAtLeastOneRecord();
         UpdateTitle();
+        UpdateZoomUi(_appSettings.ZoomScale);
+        UpdateStatusBar();
         Loaded += OnLoaded;
         Closing += OnClosing;
+        AddHandler(System.Windows.UIElement.PreviewMouseWheelEvent, new System.Windows.Input.MouseWheelEventHandler(OnWindowPreviewMouseWheel), true);
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -61,6 +66,8 @@ public partial class MainWindow : Window
 
         EditorWebView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
         EditorWebView.NavigationCompleted += OnWebViewNavigationCompleted;
+        EditorWebView.CoreWebView2.Settings.IsZoomControlEnabled = true;
+        EditorWebView.ZoomFactor = _appSettings.ZoomScale;
 
         var webRoot = Path.Combine(AppContext.BaseDirectory, "Web");
         var htmlPath = Path.Combine(webRoot, "index.html");
@@ -95,6 +102,7 @@ public partial class MainWindow : Window
             _currentFilePath = dialog.FileName;
             EnsureAtLeastOneRecord();
             UpdateTitle();
+            UpdateStatusBar();
         }
         catch (Exception ex)
         {
@@ -221,6 +229,9 @@ public partial class MainWindow : Window
                 case "command":
                     ApplyCommand(document.RootElement);
                     break;
+                case "zoomDelta":
+                    ApplyZoomDelta(document.RootElement);
+                    break;
             }
         }
         catch (Exception ex)
@@ -258,6 +269,8 @@ public partial class MainWindow : Window
         {
             record.Body = text;
         }
+
+        UpdateStatusBar();
     }
 
     private void ApplyCommand(JsonElement root)
@@ -283,11 +296,13 @@ public partial class MainWindow : Window
             case "insertAfter":
                 _document.Records.Insert(recordIndex + 1, new ScriptRecord());
                 SendDocumentToWebView();
+                UpdateStatusBar();
                 break;
             case "deleteRecord":
                 _document.Records.RemoveAt(recordIndex);
                 EnsureAtLeastOneRecord();
                 SendDocumentToWebView();
+                UpdateStatusBar();
                 break;
         }
     }
@@ -298,6 +313,109 @@ public partial class MainWindow : Window
         {
             _document.Records.Add(new ScriptRecord());
         }
+    }
+
+    private void UpdateStatusBar()
+    {
+        var totalChars = 0;
+        foreach (var record in _document.Records)
+        {
+            if (record.RoleName != null)
+            {
+                totalChars += record.RoleName.Length;
+            }
+            if (record.Body != null)
+            {
+                totalChars += record.Body.Length;
+            }
+        }
+
+        CharCountText.Text = $"文字数: {totalChars}";
+        if (string.IsNullOrWhiteSpace(PageInfoText.Text))
+        {
+            PageInfoText.Text = "ページ: -";
+        }
+    }
+
+    private void UpdateZoomUi(double zoomScale)
+    {
+        if (ZoomSlider == null || ZoomValueText == null)
+        {
+            return;
+        }
+        if (ZoomSlider.Value != zoomScale)
+        {
+            ZoomSlider.Value = zoomScale;
+        }
+        var percent = Math.Round(zoomScale * 100.0);
+        ZoomValueText.Text = $"{percent}%";
+    }
+
+    private void OnZoomSliderValueChanged(object sender, System.Windows.RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!_isUiReady)
+        {
+            return;
+        }
+        var zoom = Math.Clamp(e.NewValue, 0.5, 2.0);
+        _appSettings.ZoomScale = zoom;
+        UpdateZoomUi(zoom);
+        if (EditorWebView.CoreWebView2 != null)
+        {
+            EditorWebView.ZoomFactor = zoom;
+        }
+    }
+
+
+    private void OnZoomSliderMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Slider slider)
+        {
+            return;
+        }
+
+        var step = slider.SmallChange > 0 ? slider.SmallChange : 0.05;
+        var direction = e.Delta > 0 ? 1 : -1;
+        var next = slider.Value + (step * direction);
+        slider.Value = Math.Clamp(next, slider.Minimum, slider.Maximum);
+        e.Handled = true;
+    }
+
+    private void OnWindowPreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        if (!_isUiReady || ZoomSlider == null)
+        {
+            return;
+        }
+
+        if (System.Windows.Input.Keyboard.Modifiers != System.Windows.Input.ModifierKeys.Control)
+        {
+            return;
+        }
+
+        var step = ZoomSlider.SmallChange > 0 ? ZoomSlider.SmallChange : 0.05;
+        var direction = e.Delta > 0 ? 1 : -1;
+        var next = ZoomSlider.Value + (step * direction);
+        ZoomSlider.Value = Math.Clamp(next, ZoomSlider.Minimum, ZoomSlider.Maximum);
+        e.Handled = true;
+    }
+
+    private void ApplyZoomDelta(JsonElement root)
+    {
+        if (ZoomSlider == null || !_isUiReady)
+        {
+            return;
+        }
+
+        if (!root.TryGetProperty("direction", out var directionProperty))
+        {
+            return;
+        }
+
+        var direction = directionProperty.GetInt32();
+        var step = ZoomSlider.SmallChange > 0 ? ZoomSlider.SmallChange : 0.05;
+        var next = ZoomSlider.Value + (step * direction);
+        ZoomSlider.Value = Math.Clamp(next, ZoomSlider.Minimum, ZoomSlider.Maximum);
     }
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
