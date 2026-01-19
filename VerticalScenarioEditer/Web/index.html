@@ -35,6 +35,15 @@
       display: flex;
       flex-direction: row-reverse;
       align-items: flex-start;
+      background-image: repeating-linear-gradient(
+        to left,
+        rgba(0, 0, 0, 0.08) 0px,
+        rgba(0, 0, 0, 0.08) 1px,
+        transparent 1px,
+        transparent var(--line-advance)
+      );
+      background-size: var(--line-advance) 100%;
+      background-position: right top;
     }
     .record {
       position: relative;
@@ -315,14 +324,14 @@
       return lineText.length === 0;
     }
 
-    function focusElement(element) {
+    function focusElement(element, atStart = false) {
       if (!element) {
         return;
       }
       element.focus();
       const range = document.createRange();
       range.selectNodeContents(element);
-      range.collapse(false);
+      range.collapse(atStart);
       const selection = window.getSelection();
       if (selection) {
         selection.removeAllRanges();
@@ -330,16 +339,17 @@
       }
     }
 
-    function focusRecord(recordIndex, field) {
+    function focusRecord(recordIndex, field, atStart = false) {
       const recordElement = getRecordElement(recordIndex);
       if (!recordElement) {
-        return;
+        return false;
       }
       if (field === 'roleName') {
-        focusElement(getRoleElement(recordElement));
+        focusElement(getRoleElement(recordElement), atStart);
       } else {
-        focusElement(getBodyElement(recordElement));
+        focusElement(getBodyElement(recordElement), atStart);
       }
+      return true;
     }
 
     function postMessage(message) {
@@ -502,7 +512,7 @@
       });
 
       if (pendingFocus) {
-        focusRecord(pendingFocus.recordIndex, pendingFocus.field);
+        focusRecord(pendingFocus.recordIndex, pendingFocus.field, pendingFocus.atStart);
         pendingFocus = null;
       }
     }
@@ -533,6 +543,52 @@
       const roleElement = getRoleElement(recordElement);
       const bodyElement = getBodyElement(recordElement);
 
+      if (event.ctrlKey && event.key.startsWith('Arrow')) {
+        let nextIndex = recordIndex;
+        let nextField = field;
+        if (field === 'body') {
+          if (event.key === 'ArrowLeft') {
+            nextIndex = recordIndex + 1;
+            nextField = 'body';
+          } else if (event.key === 'ArrowRight') {
+            nextIndex = recordIndex - 1;
+            nextField = 'body';
+          } else if (event.key === 'ArrowUp') {
+            nextIndex = recordIndex;
+            nextField = 'roleName';
+          } else if (event.key === 'ArrowDown') {
+            nextIndex = recordIndex + 1;
+            nextField = 'roleName';
+          }
+        } else {
+          if (event.key === 'ArrowLeft') {
+            nextIndex = recordIndex + 1;
+            nextField = 'roleName';
+          } else if (event.key === 'ArrowRight') {
+            nextIndex = recordIndex - 1;
+            nextField = 'roleName';
+          } else if (event.key === 'ArrowUp') {
+            nextIndex = recordIndex - 1;
+            nextField = 'body';
+          } else if (event.key === 'ArrowDown') {
+            nextIndex = recordIndex;
+            nextField = 'body';
+          }
+        }
+
+        if (currentDocument && currentDocument.records) {
+          if (nextIndex >= 0 && nextIndex < currentDocument.records.length) {
+            event.preventDefault();
+            focusRecord(nextIndex, nextField, true);
+          } else {
+            event.preventDefault();
+            const atStart = event.key === 'ArrowRight' || event.key === 'ArrowUp';
+            focusElement(target, atStart);
+          }
+        }
+        return;
+      }
+
       if (event.key === 'Tab') {
         event.preventDefault();
         if (event.shiftKey) {
@@ -554,9 +610,9 @@
         if (event.ctrlKey) {
           const nextIndex = recordIndex + 1;
           if (currentDocument && currentDocument.records && nextIndex < currentDocument.records.length) {
-            focusRecord(nextIndex, 'roleName');
+            focusRecord(nextIndex, 'roleName', true);
           } else {
-            pendingFocus = { recordIndex: nextIndex, field: 'roleName' };
+            pendingFocus = { recordIndex: nextIndex, field: 'roleName', atStart: true };
             postMessage({ type: 'command', name: 'insertAfter', recordIndex });
           }
           return;
@@ -564,9 +620,9 @@
         if (!event.shiftKey && isCurrentLineEmpty(target)) {
           const nextIndex = recordIndex + 1;
           if (currentDocument && currentDocument.records && nextIndex < currentDocument.records.length) {
-            focusRecord(nextIndex, 'body');
+            focusRecord(nextIndex, 'body', true);
           } else {
-            pendingFocus = { recordIndex: nextIndex, field: 'body' };
+            pendingFocus = { recordIndex: nextIndex, field: 'body', atStart: true };
             postMessage({ type: 'command', name: 'insertAfter', recordIndex });
           }
           return;
@@ -582,7 +638,7 @@
         if (roleText.length === 0 && bodyText.length === 0) {
           event.preventDefault();
           const focusIndex = Math.max(0, recordIndex - 1);
-          pendingFocus = { recordIndex: focusIndex, field: 'body' };
+          pendingFocus = { recordIndex: focusIndex, field: 'body', atStart: false };
           postMessage({ type: 'command', name: 'deleteRecord', recordIndex });
         }
       }
