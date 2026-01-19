@@ -244,6 +244,7 @@
       const measuredWidth = Math.ceil(bodyElement.scrollWidth);
       const width = Math.max(layoutState.lineAdvance, measuredWidth);
       recordElement.style.width = `${width}px`;
+      recordElement.dataset.recordWidth = `${width}`;
       bodyElement.style.width = `${width}px`;
     }
 
@@ -288,7 +289,10 @@
 
       recordElements.forEach((recordElement, index) => {
         recordElement.classList.remove('overflow');
-        const recordWidth = Math.ceil(recordElement.getBoundingClientRect().width);
+        const storedWidth = Number(recordElement.dataset.recordWidth);
+        const recordWidth = Number.isFinite(storedWidth) && storedWidth > 0
+          ? storedWidth
+          : Math.ceil(recordElement.getBoundingClientRect().width);
         if (recordWidth > layoutState.contentWidth) {
           recordElement.classList.add('overflow');
           overflowRecords.add(index);
