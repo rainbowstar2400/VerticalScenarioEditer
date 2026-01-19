@@ -7,6 +7,7 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using VerticalScenarioEditer.Models;
 using VerticalScenarioEditer.Serialization;
+using VerticalScenarioEditer.Settings;
 
 namespace VerticalScenarioEditer;
 
@@ -19,13 +20,16 @@ public partial class MainWindow : Window
     private DocumentState _document = DocumentState.CreateDefault();
     private string? _currentFilePath;
     private bool _isWebContentReady;
+    private readonly AppSettings _appSettings;
 
     public MainWindow()
     {
         InitializeComponent();
+        _appSettings = AppSettingsStore.Load();
         EnsureAtLeastOneRecord();
         UpdateTitle();
         Loaded += OnLoaded;
+        Closing += OnClosing;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -181,7 +185,8 @@ public partial class MainWindow : Window
                 marginBottomMm = DocumentSettings.MarginBottomMm,
                 fontFamily = DocumentSettings.DefaultFontFamilyName,
                 fontSizePt = DocumentSettings.DefaultFontSizePt,
-                lineSpacing = DocumentSettings.LineSpacing
+                lineSpacing = DocumentSettings.LineSpacing,
+                zoomScale = _appSettings.ZoomScale
             }
         };
 
@@ -292,6 +297,18 @@ public partial class MainWindow : Window
         if (_document.Records.Count == 0)
         {
             _document.Records.Add(new ScriptRecord());
+        }
+    }
+
+    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        try
+        {
+            AppSettingsStore.Save(_appSettings);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "設定の保存に失敗しました", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

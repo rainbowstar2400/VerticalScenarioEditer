@@ -1,0 +1,6 @@
+namespace VerticalScenarioEditer.Settings;
+
+public sealed class AppSettings
+{
+    public double ZoomScale { get; set; } = 1.0;
+}
