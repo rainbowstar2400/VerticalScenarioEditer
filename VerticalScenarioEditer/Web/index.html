@@ -240,6 +240,10 @@
         text += '\n';
       }
       function walk(current) {
+        if (current.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+          Array.from(current.childNodes).forEach(walk);
+          return;
+        }
         if (current.nodeType === Node.TEXT_NODE) {
           text += current.nodeValue || '';
           return;
