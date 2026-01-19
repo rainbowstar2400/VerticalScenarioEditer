@@ -219,6 +219,29 @@ public partial class MainWindow : Window
         SaveToPath(dialog.FileName);
     }
 
+    private void SaveCopyAs()
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = FileFilter,
+            DefaultExt = ".vse"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            DocumentFileService.Save(dialog.FileName, _document);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "保存に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+    }
+
     private void SaveToPath(string path)
     {
         try
@@ -558,5 +581,10 @@ public partial class MainWindow : Window
         {
             System.Windows.MessageBox.Show(this, ex.Message, "設定の保存に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
         }
+    }
+
+    private void OnFileSaveAsClick(object sender, RoutedEventArgs e)
+    {
+        SaveAs();
     }
 }

@@ -365,6 +365,62 @@
       });
     }
 
+    function trimTrailingEmptyLines(recordElement) {
+      const bodyElement = getBodyElement(recordElement);
+      if (!bodyElement) {
+        return false;
+      }
+      let changed = false;
+      while (bodyElement.lastChild) {
+        const node = bodyElement.lastChild;
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.nodeValue || '';
+          if (text.trim().length === 0) {
+            bodyElement.removeChild(node);
+            changed = true;
+            continue;
+          }
+          break;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const element = node;
+          if (element.classList.contains('line-placeholder')) {
+            bodyElement.removeChild(node);
+            changed = true;
+            continue;
+          }
+          if (element.nodeName === 'BR') {
+            bodyElement.removeChild(node);
+            changed = true;
+            continue;
+          }
+        }
+        break;
+      }
+      return changed;
+    }
+
+    function normalizeBodyAfterBlur(recordElement) {
+      const bodyElement = getBodyElement(recordElement);
+      if (!bodyElement) {
+        return false;
+      }
+      const raw = normalizeTextFromElement(bodyElement);
+      const trimmed = raw.replace(/\n+$/g, '');
+      if (trimmed === raw) {
+        return false;
+      }
+      appendTokens(bodyElement, tokenizeText(trimmed));
+      postMessage({
+        type: 'inputPatch',
+        recordIndex: Number(recordElement.dataset.recordIndex),
+        field: 'body',
+        text: trimmed,
+      });
+      scheduleLayoutUpdate(Number(recordElement.dataset.recordIndex));
+      return true;
+    }
+
     function isEditingActive() {
       const active = document.activeElement;
       return !!(active && active.isContentEditable);
@@ -865,6 +921,27 @@
             paginateRecords();
           }
         }, 0);
+      }, true);
+      wrap.addEventListener('focusout', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        if (target.dataset.field !== 'body') {
+          return;
+        }
+        const recordElement = getRecordElement(Number(target.dataset.recordIndex));
+        if (!recordElement) {
+          return;
+        }
+        const related = event.relatedTarget;
+        if (related instanceof Node && recordElement.contains(related)) {
+          return;
+        }
+        if (trimTrailingEmptyLines(recordElement)) {
+          syncInputForElement(target);
+        }
+        normalizeBodyAfterBlur(recordElement);
       }, true);
       window.addEventListener('wheel', (event) => {
         if (!event.ctrlKey) {

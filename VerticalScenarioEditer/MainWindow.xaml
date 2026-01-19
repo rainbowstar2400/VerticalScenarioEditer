@@ -11,7 +11,8 @@
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_ファイル">
                 <MenuItem Header="_開く..." Click="OnFileOpenClick" />
-                <MenuItem Header="_保存" Click="OnFileSaveClick" />
+                <MenuItem Header="上書き保存" Click="OnFileSaveClick" />
+                <MenuItem Header="名前をつけて保存..." Click="OnFileSaveAsClick" />
                 <Separator />
                 <MenuItem Header="テキスト書き出し..." Click="OnExportTextClick" />
             </MenuItem>
