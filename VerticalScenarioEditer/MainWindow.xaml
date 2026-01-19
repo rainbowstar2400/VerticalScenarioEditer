@@ -12,8 +12,11 @@
             <MenuItem Header="_ファイル">
                 <MenuItem Header="_開く..." Click="OnFileOpenClick" />
                 <MenuItem Header="_保存" Click="OnFileSaveClick" />
+                <Separator />
+                <MenuItem Header="テキスト書き出し..." Click="OnExportTextClick" />
             </MenuItem>
             <MenuItem Header="_編集">
+                <MenuItem Header="テキストをコピー" Click="OnCopyTextClick" />
                 <MenuItem Header="役名辞書..." Click="OnRoleDictionaryClick" />
             </MenuItem>
         </Menu>

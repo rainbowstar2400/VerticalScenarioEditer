@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Text.Json;
@@ -126,6 +127,43 @@ public partial class MainWindow : Window
         SaveToPath(_currentFilePath);
     }
 
+    private void OnExportTextClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "テキスト (*.txt)|*.txt|すべてのファイル (*.*)|*.*",
+            DefaultExt = ".txt"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var text = BuildExportText();
+        try
+        {
+            File.WriteAllText(dialog.FileName, text, new UTF8Encoding(true));
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "書き出しに失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+    }
+
+    private void OnCopyTextClick(object sender, RoutedEventArgs e)
+    {
+        var text = BuildExportText();
+        try
+        {
+            System.Windows.Clipboard.SetText(text);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "コピーに失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+    }
+
     private void OnRoleDictionaryClick(object sender, RoutedEventArgs e)
     {
         var window = new RoleDictionaryWindow(_document)
@@ -138,6 +176,31 @@ public partial class MainWindow : Window
             SendDocumentToWebView();
             SendRoleDictionaryToWebView();
         }
+    }
+
+    private string BuildExportText()
+    {
+        var builder = new StringBuilder();
+        foreach (var record in _document.Records)
+        {
+            var role = record.RoleName?.Trim() ?? string.Empty;
+            var body = record.Body ?? string.Empty;
+            body = body.Replace("\r", string.Empty).Replace("\n", string.Empty);
+
+            string line;
+            if (string.IsNullOrWhiteSpace(role))
+            {
+                line = body;
+            }
+            else
+            {
+                line = $"{role}「{body}」";
+            }
+
+            builder.AppendLine(line);
+        }
+
+        return builder.ToString().TrimEnd();
     }
 
     private void SaveAs()
