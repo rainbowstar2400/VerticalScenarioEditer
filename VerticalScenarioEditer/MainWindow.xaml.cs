@@ -403,6 +403,11 @@ public partial class MainWindow : Window
                 SendDocumentToWebView();
                 UpdateStatusBar();
                 break;
+            case "insertBefore":
+                _document.Records.Insert(recordIndex, new ScriptRecord());
+                SendDocumentToWebView();
+                UpdateStatusBar();
+                break;
             case "deleteRecord":
                 _document.Records.RemoveAt(recordIndex);
                 EnsureAtLeastOneRecord();

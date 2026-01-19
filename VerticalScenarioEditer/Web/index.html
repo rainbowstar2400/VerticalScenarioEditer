@@ -348,6 +348,23 @@
       });
     }
 
+    function cleanupBodyPlaceholders(recordElement) {
+      const bodyElement = getBodyElement(recordElement);
+      if (!bodyElement) {
+        return;
+      }
+      const placeholders = Array.from(bodyElement.querySelectorAll('.line-placeholder'));
+      placeholders.forEach((placeholder) => {
+        const prev = placeholder.previousSibling;
+        const next = placeholder.nextSibling;
+        const prevIsBr = prev && prev.nodeType === Node.ELEMENT_NODE && prev.nodeName === 'BR';
+        const nextIsBr = next && next.nodeType === Node.ELEMENT_NODE && next.nodeName === 'BR';
+        if (prevIsBr && nextIsBr) {
+          placeholder.remove();
+        }
+      });
+    }
+
     function isEditingActive() {
       const active = document.activeElement;
       return !!(active && active.isContentEditable);
@@ -570,6 +587,7 @@
       if (!recordElement) {
         return;
       }
+      cleanupBodyPlaceholders(recordElement);
       const text = field === 'roleName'
         ? normalizeTextFromElement(target)
         : normalizeTextFromElement(getBodyElement(recordElement));
@@ -724,6 +742,18 @@
       const roleElement = getRoleElement(recordElement);
       const bodyElement = getBodyElement(recordElement);
 
+      if (event.ctrlKey && event.shiftKey && event.key === 'Enter') {
+        event.preventDefault();
+        if (recordIndex <= 0) {
+          pendingFocus = { recordIndex: 0, field: 'roleName', atStart: true };
+          postMessage({ type: 'command', name: 'insertBefore', recordIndex: 0 });
+          return;
+        }
+        pendingFocus = { recordIndex, field: 'roleName', atStart: true };
+        postMessage({ type: 'command', name: 'insertBefore', recordIndex });
+        return;
+      }
+
       if (event.ctrlKey && event.key.startsWith('Arrow')) {
         let nextIndex = recordIndex;
         let nextField = field;
@@ -790,12 +820,8 @@
         event.preventDefault();
         if (event.ctrlKey) {
           const nextIndex = recordIndex + 1;
-          if (currentDocument && currentDocument.records && nextIndex < currentDocument.records.length) {
-            focusRecord(nextIndex, 'roleName', true);
-          } else {
-            pendingFocus = { recordIndex: nextIndex, field: 'roleName', atStart: true };
-            postMessage({ type: 'command', name: 'insertAfter', recordIndex });
-          }
+          pendingFocus = { recordIndex: nextIndex, field: 'roleName', atStart: true };
+          postMessage({ type: 'command', name: 'insertAfter', recordIndex });
           return;
         }
         if (!event.shiftKey && isCurrentLineEmpty(target)) {
