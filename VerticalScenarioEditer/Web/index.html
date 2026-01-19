@@ -115,6 +115,7 @@
     let recordPageMap = new Map();
     let overflowRecords = new Set();
     let totalPages = 1;
+    let pendingPagination = false;
 
     function mmToPx(mm) {
       return mm / 25.4 * 96;
@@ -224,6 +225,10 @@
           updateRecordWidth(recordElement);
         }
         layoutUpdateQueue.clear();
+        if (isEditingActive()) {
+          pendingPagination = true;
+          return;
+        }
         paginateRecords();
       });
     }
@@ -334,6 +339,11 @@
         overflowCount: overflowRecords.size,
         overflowRecords: Array.from(overflowRecords),
       });
+    }
+
+    function isEditingActive() {
+      const active = document.activeElement;
+      return !!(active && active.isContentEditable);
     }
 
     function appendTokens(container, tokens) {
@@ -623,12 +633,11 @@
         const recordElements = wrap.querySelectorAll('.record');
         recordElements.forEach((recordElement) => updateRecordWidth(recordElement));
         paginateRecords();
+        if (pendingFocus) {
+          focusRecord(pendingFocus.recordIndex, pendingFocus.field, pendingFocus.atStart);
+          pendingFocus = null;
+        }
       });
-
-      if (pendingFocus) {
-        focusRecord(pendingFocus.recordIndex, pendingFocus.field, pendingFocus.atStart);
-        pendingFocus = null;
-      }
     }
 
     function handleInput(event) {
@@ -764,6 +773,14 @@
       wrap.addEventListener('keydown', handleKeyDown, true);
       wrap.addEventListener('focusin', () => {
         sendLayoutStatus();
+      }, true);
+      wrap.addEventListener('focusout', () => {
+        setTimeout(() => {
+          if (pendingPagination && !isEditingActive()) {
+            pendingPagination = false;
+            paginateRecords();
+          }
+        }, 0);
       }, true);
       window.addEventListener('wheel', (event) => {
         if (!event.ctrlKey) {
