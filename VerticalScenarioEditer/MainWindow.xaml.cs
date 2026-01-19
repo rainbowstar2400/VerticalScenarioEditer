@@ -22,6 +22,9 @@ public partial class MainWindow : Window
     private bool _isWebContentReady;
     private readonly AppSettings _appSettings;
     private bool _isUiReady;
+    private int _currentPage = 1;
+    private int _totalPages = 1;
+    private bool _hasLayoutStatus;
 
     public MainWindow()
     {
@@ -194,6 +197,7 @@ public partial class MainWindow : Window
                 fontFamily = DocumentSettings.DefaultFontFamilyName,
                 fontSizePt = DocumentSettings.DefaultFontSizePt,
                 lineSpacing = DocumentSettings.LineSpacing,
+                pageGapPx = DocumentSettings.PageGapDip,
                 zoomScale = _appSettings.ZoomScale
             }
         };
@@ -231,6 +235,9 @@ public partial class MainWindow : Window
                     break;
                 case "zoomDelta":
                     ApplyZoomDelta(document.RootElement);
+                    break;
+                case "layoutStatus":
+                    ApplyLayoutStatus(document.RootElement);
                     break;
             }
         }
@@ -331,7 +338,11 @@ public partial class MainWindow : Window
         }
 
         CharCountText.Text = $"文字数: {totalChars}";
-        if (string.IsNullOrWhiteSpace(PageInfoText.Text))
+        if (_hasLayoutStatus)
+        {
+            PageInfoText.Text = $"ページ: {_currentPage}/{_totalPages}";
+        }
+        else if (string.IsNullOrWhiteSpace(PageInfoText.Text))
         {
             PageInfoText.Text = "ページ: -";
         }
@@ -416,6 +427,22 @@ public partial class MainWindow : Window
         var step = ZoomSlider.SmallChange > 0 ? ZoomSlider.SmallChange : 0.05;
         var next = ZoomSlider.Value + (step * direction);
         ZoomSlider.Value = Math.Clamp(next, ZoomSlider.Minimum, ZoomSlider.Maximum);
+    }
+
+    private void ApplyLayoutStatus(JsonElement root)
+    {
+        if (root.TryGetProperty("totalPages", out var totalProperty) && totalProperty.TryGetInt32(out var totalPages))
+        {
+            _totalPages = Math.Max(1, totalPages);
+        }
+
+        if (root.TryGetProperty("currentPage", out var currentProperty) && currentProperty.TryGetInt32(out var currentPage))
+        {
+            _currentPage = Math.Clamp(currentPage, 1, _totalPages);
+        }
+
+        _hasLayoutStatus = true;
+        UpdateStatusBar();
     }
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)

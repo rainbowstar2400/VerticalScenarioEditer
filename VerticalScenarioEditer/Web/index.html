@@ -20,8 +20,17 @@
     }
     .wrap {
       height: 100%;
-      display: grid;
-      place-items: center;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      overflow: auto;
+      padding: 24px 0;
+      box-sizing: border-box;
+    }
+    .pages {
+      display: flex;
+      flex-direction: column;
+      gap: var(--page-gap);
     }
     .page {
       background: var(--page);
@@ -49,6 +58,10 @@
       position: relative;
       display: block;
       flex: 0 0 auto;
+    }
+    .record.overflow .body,
+    .record.overflow .role {
+      box-shadow: inset 0 0 0 2px rgba(210, 60, 60, 0.8);
     }
     .role,
     .body {
@@ -97,6 +110,11 @@
     let layoutState = null;
     let layoutUpdateHandle = null;
     const layoutUpdateQueue = new Set();
+    let pagesHost = null;
+    let recordElements = [];
+    let recordPageMap = new Map();
+    let overflowRecords = new Set();
+    let totalPages = 1;
 
     function mmToPx(mm) {
       return mm / 25.4 * 96;
@@ -206,6 +224,7 @@
           updateRecordWidth(recordElement);
         }
         layoutUpdateQueue.clear();
+        paginateRecords();
       });
     }
 
@@ -221,6 +240,100 @@
       const width = Math.max(layoutState.lineAdvance, measuredWidth);
       recordElement.style.width = `${width}px`;
       bodyElement.style.width = `${width}px`;
+    }
+
+    function createPage() {
+      if (!layoutState) {
+        return { page: document.createElement('div'), content: document.createElement('div') };
+      }
+      const page = document.createElement('div');
+      page.className = 'page';
+      page.style.width = `${layoutState.pageWidth}px`;
+      page.style.height = `${layoutState.pageHeight}px`;
+      page.style.setProperty('--font-size', `${layoutState.fontSize}px`);
+      page.style.setProperty('--line-advance', `${layoutState.lineAdvance}px`);
+      page.style.setProperty('--role-height', `${layoutState.roleLabelHeight}px`);
+      page.style.setProperty('--font-family', layoutState.fontFamily);
+
+      const content = document.createElement('div');
+      content.className = 'content';
+      content.style.top = `${layoutState.marginTop}px`;
+      content.style.left = `${layoutState.marginLeft}px`;
+      content.style.width = `${layoutState.contentWidth}px`;
+      content.style.height = `${layoutState.contentHeight}px`;
+      content.style.gap = `${layoutState.recordGap}px`;
+
+      page.appendChild(content);
+      return { page, content };
+    }
+
+    function paginateRecords() {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+
+      pagesHost.innerHTML = '';
+      recordPageMap = new Map();
+      overflowRecords = new Set();
+      totalPages = 1;
+
+      let { page, content } = createPage();
+      let usedWidth = 0;
+      let pageIndex = 0;
+
+      recordElements.forEach((recordElement, index) => {
+        recordElement.classList.remove('overflow');
+        const recordWidth = Math.ceil(recordElement.getBoundingClientRect().width);
+        if (recordWidth > layoutState.contentWidth) {
+          recordElement.classList.add('overflow');
+          overflowRecords.add(index);
+        }
+
+        const gapWidth = usedWidth === 0 ? 0 : layoutState.recordGap;
+        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > layoutState.contentWidth) {
+          pagesHost.appendChild(page);
+          pageIndex += 1;
+          ({ page, content } = createPage());
+          usedWidth = 0;
+        }
+
+        content.appendChild(recordElement);
+        recordPageMap.set(index, pageIndex);
+        usedWidth += gapWidth + recordWidth;
+      });
+
+      pagesHost.appendChild(page);
+      totalPages = Math.max(1, pageIndex + 1);
+      sendLayoutStatus();
+    }
+
+    function getFocusedRecordIndex() {
+      const active = document.activeElement;
+      if (!active) {
+        return null;
+      }
+      const recordElement = active.closest('.record');
+      if (!recordElement || !recordElement.dataset.recordIndex) {
+        return null;
+      }
+      const recordIndex = Number(recordElement.dataset.recordIndex);
+      return Number.isNaN(recordIndex) ? null : recordIndex;
+    }
+
+    function sendLayoutStatus() {
+      const focusedIndex = getFocusedRecordIndex();
+      let currentPage = 1;
+      if (focusedIndex !== null && recordPageMap.has(focusedIndex)) {
+        currentPage = (recordPageMap.get(focusedIndex) ?? 0) + 1;
+      }
+
+      postMessage({
+        type: 'layoutStatus',
+        totalPages,
+        currentPage,
+        overflowCount: overflowRecords.size,
+        overflowRecords: Array.from(overflowRecords),
+      });
     }
 
     function appendTokens(container, tokens) {
@@ -432,6 +545,7 @@
       const marginRight = mmToPx(settings.marginRightMm || 20);
       const marginTop = mmToPx(settings.marginTopMm || 25);
       const marginBottom = mmToPx(settings.marginBottomMm || 25);
+      const pageGap = settings.pageGapPx || 24;
       const fontSize = (settings.fontSizePt || 10.5) / 72 * 96;
       const lineSpacing = settings.lineSpacing || 1.0;
       const lineAdvance = fontSize * lineSpacing;
@@ -442,28 +556,29 @@
       const bodyHeight = contentHeight - roleLabelHeight;
       const roleCharsPerColumn = Math.max(1, Math.floor(roleLabelHeight / lineAdvance));
       layoutState = {
-        lineAdvance,
+        pageWidth,
+        pageHeight,
+        marginLeft,
+        marginTop,
+        contentWidth,
         contentHeight,
+        recordGap,
+        fontSize,
+        lineAdvance,
+        roleLabelHeight,
+        fontFamily: settings.fontFamily || '"游明朝", "Yu Mincho", "MS Mincho", serif',
       };
 
       wrap.innerHTML = '';
-      const page = document.createElement('div');
-      page.className = 'page';
-      page.style.width = `${pageWidth}px`;
-      page.style.height = `${pageHeight}px`;
-      page.style.setProperty('--font-size', `${fontSize}px`);
-      page.style.setProperty('--line-advance', `${lineAdvance}px`);
-      page.style.setProperty('--role-height', `${roleLabelHeight}px`);
-      page.style.setProperty('--font-family', settings.fontFamily || '"游明朝", "Yu Mincho", "MS Mincho", serif');
+      pagesHost = document.createElement('div');
+      pagesHost.className = 'pages';
+      pagesHost.style.setProperty('--page-gap', `${pageGap}px`);
+      wrap.appendChild(pagesHost);
 
-      const content = document.createElement('div');
-      content.className = 'content';
-      content.style.top = `${marginTop}px`;
-      content.style.left = `${marginLeft}px`;
-      content.style.width = `${contentWidth}px`;
-      content.style.height = `${contentHeight}px`;
-      content.style.gap = `${recordGap}px`;
+      const { page, content } = createPage();
+      pagesHost.appendChild(page);
 
+      recordElements = [];
       for (let recordIndex = 0; recordIndex < (doc.records || []).length; recordIndex += 1) {
         const record = doc.records[recordIndex] || {};
         const bodyText = record.body || '';
@@ -501,14 +616,13 @@
         recordContainer.appendChild(body);
         recordContainer.appendChild(role);
         content.appendChild(recordContainer);
+        recordElements.push(recordContainer);
       }
-
-      page.appendChild(content);
-      wrap.appendChild(page);
 
       requestAnimationFrame(() => {
         const recordElements = wrap.querySelectorAll('.record');
         recordElements.forEach((recordElement) => updateRecordWidth(recordElement));
+        paginateRecords();
       });
 
       if (pendingFocus) {
@@ -648,6 +762,9 @@
       window.chrome.webview.postMessage({ type: 'documentReady' });
       wrap.addEventListener('input', handleInput, true);
       wrap.addEventListener('keydown', handleKeyDown, true);
+      wrap.addEventListener('focusin', () => {
+        sendLayoutStatus();
+      }, true);
       window.addEventListener('wheel', (event) => {
         if (!event.ctrlKey) {
           return;
