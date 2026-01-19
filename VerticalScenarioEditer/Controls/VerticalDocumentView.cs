@@ -24,7 +24,7 @@ public sealed class VerticalDocumentView : FrameworkElement
         set => SetValue(DocumentProperty, value ?? DocumentState.CreateDefault());
     }
 
-    protected override Size MeasureOverride(Size availableSize)
+    protected override System.Windows.Size MeasureOverride(System.Windows.Size availableSize)
     {
         _layout = BuildLayout();
         return _layout.Size;
@@ -77,7 +77,7 @@ public sealed class VerticalDocumentView : FrameworkElement
         }
 
         var totalHeight = pageHeight * pages.Count + DocumentSettings.PageGapDip * Math.Max(0, pages.Count - 1);
-        return new DocumentLayout(new Size(pageWidth, totalHeight), pages, hasOverflow);
+        return new DocumentLayout(new System.Windows.Size(pageWidth, totalHeight), pages, hasOverflow);
     }
 
     private static List<string> BuildColumns(string text, int maxCharsPerColumn)
@@ -128,7 +128,7 @@ public sealed class VerticalDocumentView : FrameworkElement
         {
             var pageTop = pageIndex * (layout.PageHeight + DocumentSettings.PageGapDip);
             var pageRect = new Rect(0, pageTop, layout.PageWidth, layout.PageHeight);
-            dc.DrawRectangle(Brushes.White, new Pen(Brushes.Gray, 1), pageRect);
+            dc.DrawRectangle(System.Windows.Media.Brushes.White, new System.Windows.Media.Pen(System.Windows.Media.Brushes.Gray, 1), pageRect);
 
             var contentRect = new Rect(
                 layout.ContentRect.Left,
@@ -142,7 +142,9 @@ public sealed class VerticalDocumentView : FrameworkElement
                 var drawColumns = Math.Min(recordColumns, layout.ColumnsPerPage);
                 var recordLeft = contentRect.Right - (recordLayout.ColumnStart + drawColumns) * columnAdvance;
                 var recordRect = new Rect(recordLeft, contentRect.Top, drawColumns * columnAdvance, contentRect.Height);
-                var recordPen = recordLayout.Overflow ? new Pen(Brushes.Red, 1.5) : new Pen(Brushes.LightGray, 1);
+                var recordPen = recordLayout.Overflow
+                    ? new System.Windows.Media.Pen(System.Windows.Media.Brushes.Red, 1.5)
+                    : new System.Windows.Media.Pen(System.Windows.Media.Brushes.LightGray, 1);
 
                 dc.DrawRectangle(null, recordPen, recordRect);
 
@@ -167,12 +169,12 @@ public sealed class VerticalDocumentView : FrameworkElement
                     var warningText = new FormattedText(
                         "警告: 1ページに収まらないレコードがあります",
                         CultureInfo.CurrentCulture,
-                        FlowDirection.LeftToRight,
+                        System.Windows.FlowDirection.LeftToRight,
                         typeface,
                         DocumentSettings.FontSizeDip,
-                        Brushes.Red,
+                        System.Windows.Media.Brushes.Red,
                         dpi);
-                    dc.DrawText(warningText, new Point(contentRect.Left, contentRect.Top - warningText.Height - 4));
+                    dc.DrawText(warningText, new System.Windows.Point(contentRect.Left, contentRect.Top - warningText.Height - 4));
                 }
             }
         }
@@ -187,10 +189,10 @@ public sealed class VerticalDocumentView : FrameworkElement
             var formatted = new FormattedText(
                 glyph,
                 CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight,
+                System.Windows.FlowDirection.LeftToRight,
                 typeface,
                 DocumentSettings.FontSizeDip,
-                Brushes.Black,
+                System.Windows.Media.Brushes.Black,
                 dpi);
 
             var x = columnLeft + (columnAdvance - formatted.Width) / 2;
@@ -198,14 +200,14 @@ public sealed class VerticalDocumentView : FrameworkElement
             var charRect = new Rect(columnLeft, y, columnAdvance, columnAdvance);
             if (ShouldRotate(text[index]))
             {
-                var center = new Point(charRect.Left + charRect.Width / 2, charRect.Top + charRect.Height / 2);
+                var center = new System.Windows.Point(charRect.Left + charRect.Width / 2, charRect.Top + charRect.Height / 2);
                 dc.PushTransform(new RotateTransform(90, center.X, center.Y));
-                dc.DrawText(formatted, new Point(x, y));
+                dc.DrawText(formatted, new System.Windows.Point(x, y));
                 dc.Pop();
             }
             else
             {
-                dc.DrawText(formatted, new Point(x, y));
+                dc.DrawText(formatted, new System.Windows.Point(x, y));
             }
         }
     }
@@ -215,7 +217,7 @@ public sealed class VerticalDocumentView : FrameworkElement
         return ch <= 0x7F;
     }
 
-    private sealed record DocumentLayout(Size Size, List<PageLayout> Pages, bool HasOverflow)
+    private sealed record DocumentLayout(System.Windows.Size Size, List<PageLayout> Pages, bool HasOverflow)
     {
         public Rect ContentRect => Pages[0].ContentRect;
         public double PageWidth => Pages[0].PageWidth;

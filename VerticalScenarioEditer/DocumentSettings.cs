@@ -32,7 +32,7 @@ public static class DocumentSettings
     public static double RoleLabelHeightDip => ColumnAdvanceDip * RoleLabelHeightChars;
     public static double RecordGapDip => ColumnAdvanceDip * RecordGapChars;
     public static Thickness PageMargin => new Thickness(MarginLeftDip, MarginTopDip, MarginRightDip, MarginBottomDip);
-    public static FontFamily DefaultFontFamily { get; } = CreateDefaultFontFamily();
+    public static System.Windows.Media.FontFamily DefaultFontFamily { get; } = CreateDefaultFontFamily();
 
     private static double MmToDip(double mm)
     {
@@ -44,12 +44,12 @@ public static class DocumentSettings
         return points / 72.0 * 96.0;
     }
 
-    private static FontFamily CreateDefaultFontFamily()
+    private static System.Windows.Media.FontFamily CreateDefaultFontFamily()
     {
         var preferred = Fonts.SystemFontFamilies.FirstOrDefault(font =>
             string.Equals(font.Source, DefaultFontFamilyName, StringComparison.OrdinalIgnoreCase) ||
             font.FamilyNames.Values.Any(name => string.Equals(name, DefaultFontFamilyName, StringComparison.OrdinalIgnoreCase)));
 
-        return preferred ?? new FontFamily("MS Mincho");
+        return preferred ?? new System.Windows.Media.FontFamily("MS Mincho");
     }
 }

@@ -8,7 +8,7 @@
         Background="#F0F0F0">
     <DockPanel Margin="16">
         <TextBlock DockPanel.Dock="Top"
-                   Text="色の指定は #RRGGBB などの形式で入力してください。"
+                   Text="色はプルダウンから選択、または「選択」でカラーピッカーを使って指定できます。"
                    Foreground="#666666"
                    Margin="0,0,0,8"/>
         <StackPanel DockPanel.Dock="Bottom"
@@ -41,9 +41,22 @@
                                     Binding="{Binding RoleName}"
                                     IsReadOnly="True"
                                     Width="*" />
-                <DataGridTextColumn Header="色"
-                                    Binding="{Binding Color, UpdateSourceTrigger=PropertyChanged}"
-                                    Width="120" />
+                <DataGridTemplateColumn Header="色" Width="180">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <ComboBox ItemsSource="{Binding DataContext.ColorPresets, RelativeSource={RelativeSource AncestorType=Window}}"
+                                          IsEditable="True"
+                                          Width="120"
+                                          Text="{Binding Color, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button Content="選択"
+                                        Width="48"
+                                        Margin="6,0,0,0"
+                                        Click="OnPickColorClick" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>
