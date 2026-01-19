@@ -75,6 +75,9 @@
     .role {
       white-space: pre;
     }
+    .role .role-token {
+      background-color: transparent;
+    }
     .body {
       white-space: pre-wrap;
       word-break: break-all;
@@ -350,7 +353,7 @@
       return !!(active && active.isContentEditable);
     }
 
-    function appendTokens(container, tokens) {
+    function appendTokens(container, tokens, markRoleTokens = false) {
       container.textContent = '';
       for (const token of tokens) {
         if (token.type === 'newline') {
@@ -365,9 +368,47 @@
         if (token.type === 'tcy') {
           span.className = 'tcy';
         }
+        if (markRoleTokens) {
+          span.classList.add('role-token');
+        }
         span.textContent = token.text;
         container.appendChild(span);
       }
+    }
+
+    function getRoleColor(roleName) {
+      if (!currentDocument) {
+        return '';
+      }
+      const dictionary = currentDocument.roleDictionary || currentDocument.RoleDictionary;
+      if (!dictionary) {
+        return '';
+      }
+      const key = roleName ? roleName.trim() : '';
+      return key ? (dictionary[key] || '') : '';
+    }
+
+    function applyRoleColor(roleElement, roleName) {
+      if (!roleElement) {
+        return;
+      }
+      const color = roleName ? getRoleColor(roleName) : '';
+      const tokens = roleElement.querySelectorAll('.role-token');
+      tokens.forEach((token) => {
+        token.style.backgroundColor = color || '';
+      });
+    }
+
+    function applyRoleDictionaryUpdate(roleDictionary) {
+      if (!currentDocument) {
+        currentDocument = { records: [] };
+      }
+      currentDocument.roleDictionary = roleDictionary || {};
+      recordElements.forEach((recordElement) => {
+        const roleElement = getRoleElement(recordElement);
+        const roleName = roleElement ? normalizeTextFromElement(roleElement) : '';
+        applyRoleColor(roleElement, roleName);
+      });
     }
 
     function extractText(node) {
@@ -538,6 +579,9 @@
         field,
         text,
       });
+      if (field === 'roleName') {
+        applyRoleColor(target, text);
+      }
       if (field === 'body') {
         scheduleLayoutUpdate(recordIndex);
       }
@@ -549,6 +593,15 @@
       }
 
       const doc = message.document || { records: [] };
+      if (!doc.records && doc.Records) {
+        doc.records = doc.Records;
+      }
+      if (doc.records) {
+        doc.records = doc.records.map((record) => ({
+          roleName: record.roleName ?? record.RoleName ?? '',
+          body: record.body ?? record.Body ?? '',
+        }));
+      }
       currentDocument = doc;
       const settings = message.settings || lastSettings || {};
       lastSettings = settings;
@@ -625,7 +678,8 @@
         role.setAttribute('contenteditable', 'true');
         role.dataset.field = 'roleName';
         role.dataset.recordIndex = recordContainer.dataset.recordIndex;
-        appendTokens(role, takeTokens(roleTokens, roleCharsPerColumn));
+        appendTokens(role, takeTokens(roleTokens, roleCharsPerColumn), true);
+        applyRoleColor(role, record.roleName || '');
 
         recordContainer.appendChild(body);
         recordContainer.appendChild(role);
@@ -795,7 +849,15 @@
         postMessage({ type: 'zoomDelta', direction });
       }, { passive: false });
       window.chrome.webview.addEventListener('message', (event) => {
-        renderDocument(event.data);
+        const message = event.data;
+        if (!message || !message.type) {
+          return;
+        }
+        if (message.type === 'applyRoleDictionary') {
+          applyRoleDictionaryUpdate(message.roleDictionary);
+          return;
+        }
+        renderDocument(message);
       });
       status.textContent = 'ドキュメント受信待ちです';
     } else {

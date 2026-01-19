@@ -13,6 +13,9 @@
                 <MenuItem Header="_開く..." Click="OnFileOpenClick" />
                 <MenuItem Header="_保存" Click="OnFileSaveClick" />
             </MenuItem>
+            <MenuItem Header="_編集">
+                <MenuItem Header="役名辞書..." Click="OnRoleDictionaryClick" />
+            </MenuItem>
         </Menu>
         <StatusBar DockPanel.Dock="Bottom">
             <StatusBarItem>

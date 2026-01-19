@@ -126,6 +126,20 @@ public partial class MainWindow : Window
         SaveToPath(_currentFilePath);
     }
 
+    private void OnRoleDictionaryClick(object sender, RoutedEventArgs e)
+    {
+        var window = new RoleDictionaryWindow(_document)
+        {
+            Owner = this
+        };
+
+        if (window.ShowDialog() == true)
+        {
+            SendDocumentToWebView();
+            SendRoleDictionaryToWebView();
+        }
+    }
+
     private void SaveAs()
     {
         var dialog = new SaveFileDialog
@@ -200,6 +214,27 @@ public partial class MainWindow : Window
                 pageGapPx = DocumentSettings.PageGapDip,
                 zoomScale = _appSettings.ZoomScale
             }
+        };
+
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+
+        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
+    }
+
+    private void SendRoleDictionaryToWebView()
+    {
+        if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            type = "applyRoleDictionary",
+            roleDictionary = _document.RoleDictionary
         };
 
         var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
