@@ -8,8 +8,8 @@ namespace VerticalScenarioEditer;
 public static class DocumentSettings
 {
     public const string DefaultFontFamilyName = "游明朝";
-    public const double DefaultFontSizePt = 10.5;
-    public const double LineSpacing = 12.4 / 10.5;
+    public const double DefaultFontSizePt = 11.52;
+    public const double LineSpacing = 1.65;
     public const double RoleLabelHeightChars = 5.5;
     public const double RecordGapChars = 1.0;
     public const double PageGapDip = 24.0;
