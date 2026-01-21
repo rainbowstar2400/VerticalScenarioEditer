@@ -10,7 +10,7 @@ public static class DocumentSettings
     public const string DefaultFontFamilyName = "游明朝";
     public const double DefaultFontSizePt = 11.18;
     public const double LineSpacing = 1.7;
-    public const double RoleLabelHeightChars = 5.0;
+    public const double RoleLabelHeightChars = 4.0;
     public const double RecordGapChars = 1.0;
     public const double PageGapDip = 24.0;
 

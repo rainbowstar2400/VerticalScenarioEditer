@@ -105,23 +105,16 @@
       box-shadow: inset 0 0 0 2px rgba(210, 60, 60, 0.8);
     }
     .role,
-    .body,
-    .role-inner {
+    .body {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      line-height: var(--line-advance);
       font-size: var(--font-size);
       font-family: var(--font-family);
       color: var(--text);
     }
     .role {
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
       white-space: pre;
-    }
-    .role-inner {
-      writing-mode: vertical-rl;
-      text-orientation: mixed;
-      line-height: var(--role-line-height);
-      display: inline-block;
     }
     .role .role-token {
       background-color: transparent;
@@ -313,8 +306,7 @@
       page.style.setProperty('--font-size', `${layoutState.fontSize}px`);
       page.style.setProperty('--line-advance', `${layoutState.lineAdvance}px`);
       page.style.setProperty('--role-height', `${layoutState.roleLabelHeight}px`);
-      page.style.setProperty('--role-line-height', `${layoutState.roleLineHeight}px`);
-      page.style.setProperty('--font-family', layoutState.fontFamily);
+            page.style.setProperty('--font-family', layoutState.fontFamily);
 
       const content = document.createElement('div');
       content.className = 'content';
@@ -781,12 +773,12 @@
       const fontSize = (settings.fontSizePt || 10.5) / 72 * 96;
       const lineSpacing = settings.lineSpacing || 1.0;
       const lineAdvance = fontSize * lineSpacing;
-      const roleLabelHeight = fontSize * 5.0;
+      const roleLabelHeight = lineAdvance * 4.0;
       const recordGap = lineAdvance * 1.0;
       const contentWidth = pageWidth - marginLeft - marginRight;
       const contentHeight = pageHeight - marginTop - marginBottom;
       const bodyHeight = contentHeight - roleLabelHeight;
-      const roleCharsPerColumn = Math.max(1, Math.floor(roleLabelHeight / fontSize));
+      const roleCharsPerColumn = Math.max(1, Math.floor(roleLabelHeight / lineAdvance));
       layoutState = {
         pageWidth,
         pageHeight,
@@ -798,8 +790,7 @@
         fontSize,
         lineAdvance,
         roleLabelHeight,
-        roleLineHeight: fontSize,
-        fontFamily: settings.fontFamily || '"游明朝", "Yu Mincho", "MS Mincho", serif',
+                fontFamily: settings.fontFamily || '"游明朝", "Yu Mincho", "MS Mincho", serif',
         pageNumberEnabled,
         pageGap,
       };
@@ -846,10 +837,7 @@
         role.setAttribute('contenteditable', 'true');
         role.dataset.field = 'roleName';
         role.dataset.recordIndex = recordContainer.dataset.recordIndex;
-        const roleInner = document.createElement('div');
-        roleInner.className = 'role-inner';
-        appendTokens(roleInner, takeTokens(roleTokens, roleCharsPerColumn), true);
-        role.appendChild(roleInner);
+        appendTokens(role, takeTokens(roleTokens, roleCharsPerColumn), true);
         applyRoleColor(role, record.roleName || '');
 
         recordContainer.appendChild(body);
