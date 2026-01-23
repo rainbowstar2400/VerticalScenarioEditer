@@ -27,6 +27,10 @@ public partial class MainWindow : Window
     private int _totalPages = 1;
     private bool _hasLayoutStatus;
     private bool _hasOverflow;
+    private int? _lastFocusedRecordIndex;
+    private readonly System.Collections.Generic.HashSet<int> _overflowWarnedOnceRecords = new();
+    private readonly System.Collections.Generic.HashSet<int> _overflowWarnedAgainRecords = new();
+    private readonly System.Collections.Generic.HashSet<int> _overflowAttentionRecords = new();
 
     public MainWindow()
     {
@@ -35,6 +39,7 @@ public partial class MainWindow : Window
         _isUiReady = true;
         EnsureAtLeastOneRecord();
         UpdateTitle();
+        UpdatePageNumberToggleState();
         UpdateZoomUi(_appSettings.ZoomScale);
         UpdateStatusBar();
         Loaded += OnLoaded;
@@ -107,6 +112,8 @@ public partial class MainWindow : Window
             _currentFilePath = dialog.FileName;
             EnsureAtLeastOneRecord();
             UpdateTitle();
+            UpdatePageNumberToggleState();
+            ResetOverflowWarningState();
             UpdateStatusBar();
         }
         catch (Exception ex)
@@ -476,6 +483,28 @@ public partial class MainWindow : Window
         }
     }
 
+    private void UpdatePageNumberToggleState()
+    {
+        if (PageNumberToggleMenuItem == null)
+        {
+            return;
+        }
+        PageNumberToggleMenuItem.IsChecked = _document.PageNumberEnabled;
+    }
+
+    private void ResetOverflowWarningState()
+    {
+        _overflowWarnedOnceRecords.Clear();
+        _overflowWarnedAgainRecords.Clear();
+        _overflowAttentionRecords.Clear();
+        _lastFocusedRecordIndex = null;
+        _hasLayoutStatus = false;
+        _hasOverflow = false;
+        _currentPage = 1;
+        _totalPages = 1;
+        SendOverflowAttentionToWebView();
+    }
+
     private void UpdateZoomUi(double zoomScale)
     {
         if (ZoomSlider == null || ZoomValueText == null)
@@ -602,6 +631,10 @@ public partial class MainWindow : Window
 
     private void ApplyLayoutStatus(JsonElement root)
     {
+        var overflowRecords = GetOverflowRecords(root);
+        var focusedRecordIndex = GetFocusedRecordIndex(root);
+        _hasOverflow = overflowRecords.Count > 0;
+
         if (root.TryGetProperty("totalPages", out var totalProperty) && totalProperty.TryGetInt32(out var totalPages))
         {
             _totalPages = Math.Max(1, totalPages);
@@ -618,7 +651,102 @@ public partial class MainWindow : Window
         }
 
         _hasLayoutStatus = true;
+        UpdateOverflowWarnings(overflowRecords, focusedRecordIndex);
         UpdateStatusBar();
+    }
+
+    private System.Collections.Generic.HashSet<int> GetOverflowRecords(JsonElement root)
+    {
+        var records = new System.Collections.Generic.HashSet<int>();
+        if (!root.TryGetProperty("overflowRecords", out var overflowProperty) || overflowProperty.ValueKind != JsonValueKind.Array)
+        {
+            return records;
+        }
+
+        foreach (var item in overflowProperty.EnumerateArray())
+        {
+            if (item.TryGetInt32(out var index))
+            {
+                records.Add(index);
+            }
+        }
+
+        return records;
+    }
+
+    private int? GetFocusedRecordIndex(JsonElement root)
+    {
+        if (!root.TryGetProperty("focusedRecordIndex", out var focusedProperty))
+        {
+            return null;
+        }
+
+        if (focusedProperty.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (focusedProperty.TryGetInt32(out var index))
+        {
+            return index;
+        }
+
+        return null;
+    }
+
+    private void UpdateOverflowWarnings(System.Collections.Generic.HashSet<int> overflowRecords, int? focusedRecordIndex)
+    {
+        _overflowWarnedOnceRecords.RemoveWhere(index => !overflowRecords.Contains(index));
+        _overflowWarnedAgainRecords.RemoveWhere(index => !overflowRecords.Contains(index));
+        _overflowAttentionRecords.RemoveWhere(index => !overflowRecords.Contains(index));
+
+        var hasNewOverflow = false;
+        foreach (var index in overflowRecords)
+        {
+            if (_overflowWarnedOnceRecords.Add(index))
+            {
+                hasNewOverflow = true;
+            }
+        }
+
+        if (hasNewOverflow)
+        {
+            System.Windows.MessageBox.Show(this, "警告: 1ページに収まらないレコードがあります。区切ってください。", "溢れ警告", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
+
+        if (focusedRecordIndex.HasValue && _lastFocusedRecordIndex.HasValue && focusedRecordIndex.Value != _lastFocusedRecordIndex.Value)
+        {
+            var previousIndex = _lastFocusedRecordIndex.Value;
+            if (overflowRecords.Contains(previousIndex) && _overflowWarnedAgainRecords.Add(previousIndex))
+            {
+                _overflowAttentionRecords.Add(previousIndex);
+                System.Windows.MessageBox.Show(this, "警告: 1ページに収まらないレコードが未解決のままです。該当レコードを確認してください。", "溢れ警告", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            }
+        }
+
+        _lastFocusedRecordIndex = focusedRecordIndex;
+        SendOverflowAttentionToWebView();
+    }
+
+    private void SendOverflowAttentionToWebView()
+    {
+        if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            type = "applyOverflowAttention",
+            overflowAttentionRecords = _overflowAttentionRecords
+        };
+
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+
+        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
     }
 
     private static void TrySetPdfPageSize(CoreWebView2PrintSettings settings, double widthInches, double heightInches)
@@ -651,5 +779,16 @@ public partial class MainWindow : Window
     private void OnFileSaveAsClick(object sender, RoutedEventArgs e)
     {
         SaveAs();
+    }
+
+    private void OnPageNumberToggleChanged(object sender, RoutedEventArgs e)
+    {
+        if (PageNumberToggleMenuItem == null)
+        {
+            return;
+        }
+
+        _document.PageNumberEnabled = PageNumberToggleMenuItem.IsChecked == true;
+        SendDocumentToWebView();
     }
 }

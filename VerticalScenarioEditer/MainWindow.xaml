@@ -21,6 +21,13 @@
                 <MenuItem Header="テキストをコピー" Click="OnCopyTextClick" />
                 <MenuItem Header="役名辞書..." Click="OnRoleDictionaryClick" />
             </MenuItem>
+            <MenuItem Header="_表示">
+                <MenuItem x:Name="PageNumberToggleMenuItem"
+                          Header="ページ番号を表示"
+                          IsCheckable="True"
+                          Checked="OnPageNumberToggleChanged"
+                          Unchecked="OnPageNumberToggleChanged" />
+            </MenuItem>
         </Menu>
         <StatusBar DockPanel.Dock="Bottom">
             <StatusBarItem>

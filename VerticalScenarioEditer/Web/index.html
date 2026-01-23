@@ -100,8 +100,8 @@
       display: block;
       flex: 0 0 auto;
     }
-    .record.overflow .body,
-    .record.overflow .role {
+    .record.overflow-attention .body,
+    .record.overflow-attention .role {
       box-shadow: inset 0 0 0 2px rgba(210, 60, 60, 0.8);
     }
     .role,
@@ -427,6 +427,7 @@
         currentPage,
         overflowCount: overflowRecords.size,
         overflowRecords: Array.from(overflowRecords),
+        focusedRecordIndex: focusedIndex,
       });
     }
 
@@ -563,6 +564,18 @@
         const roleElement = getRoleElement(recordElement);
         const roleName = roleElement ? normalizeTextFromElement(roleElement) : '';
         applyRoleColor(roleElement, roleName);
+      });
+    }
+
+    function applyOverflowAttention(attentionRecords) {
+      const attentionSet = new Set(attentionRecords || []);
+      recordElements.forEach((recordElement) => {
+        const recordIndex = Number(recordElement.dataset.recordIndex);
+        if (attentionSet.has(recordIndex)) {
+          recordElement.classList.add('overflow-attention');
+        } else {
+          recordElement.classList.remove('overflow-attention');
+        }
       });
     }
 
@@ -1043,6 +1056,10 @@
         }
         if (message.type === 'applyRoleDictionary') {
           applyRoleDictionaryUpdate(message.roleDictionary);
+          return;
+        }
+        if (message.type === 'applyOverflowAttention') {
+          applyOverflowAttention(message.overflowAttentionRecords);
           return;
         }
         renderDocument(message);
