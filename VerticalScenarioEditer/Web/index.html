@@ -1,0 +1,1936 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>縦書き脚本エディタ</title>
+  <style>
+    :root {
+      --bg: #f0f0f0;
+      --page: #ffffff;
+      --frame: #909090;
+      --text: #333333;
+    }
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: "游明朝", "Yu Mincho", "MS Mincho", serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .wrap {
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      overflow: auto;
+      padding: 24px 0;
+      box-sizing: border-box;
+    }
+    .pages {
+      display: flex;
+      flex-direction: column;
+      gap: var(--page-gap);
+    }
+    .page {
+      background: var(--page);
+      border: 1px solid var(--frame);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      position: relative;
+      overflow: hidden;
+    }
+    .page-number {
+      position: absolute;
+      bottom: 34px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      color: #444444;
+      font-family: "游ゴシック", "Yu Gothic", "Meiryo", sans-serif;
+      font-weight: bold;
+    }
+    .content {
+      position: absolute;
+      display: flex;
+      flex-direction: row-reverse;
+      align-items: flex-start;
+    }
+    .break-overlay {
+      position: absolute;
+      pointer-events: none;
+      display: none;
+      z-index: 2;
+    }
+    .break-markers .break-overlay {
+      display: block;
+    }
+    @media print {
+      html, body {
+        background: #ffffff;
+        margin: 0;
+        padding: 0;
+      }
+      .wrap {
+        overflow: visible;
+        padding: 0;
+      }
+      .pages {
+        gap: 0;
+      }
+      .page {
+        box-shadow: none;
+        border: none;
+        width: 297mm;
+        height: 210mm;
+        page-break-after: always;
+      }
+      .page:last-child {
+        page-break-after: auto;
+      }
+      .content {
+        background-image: none !important;
+      }
+      .break-overlay {
+        display: none !important;
+      }
+      .page-number {
+        color: #000000;
+      }
+      ::-webkit-scrollbar {
+        width: 0 !important;
+        height: 0 !important;
+      }
+    }
+    @page {
+      size: A4 landscape;
+      margin: 0;
+    }
+    .record {
+      position: relative;
+      display: block;
+      flex: 0 0 auto;
+    }
+    .record.overflow-attention .body,
+    .record.overflow-attention .role {
+      box-shadow: inset 0 0 0 2px rgba(210, 60, 60, 0.8);
+    }
+    .record.selected .body,
+    .record.selected .role {
+      background-color: rgba(140, 210, 140, 0.25);
+    }
+    .simple-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--record-gap);
+      width: 100%;
+    }
+    .simple-frame {
+      border: 1px solid #909090;
+      box-sizing: border-box;
+      background-color: #ffffff;
+    }
+    .simple-mode .record {
+      display: flex;
+      flex-direction: row;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .simple-mode .role,
+    .simple-mode .body {
+      writing-mode: horizontal-tb;
+      text-orientation: mixed;
+      line-height: var(--line-advance);
+      padding-top: 0;
+      min-width: auto;
+    }
+    .simple-mode .role {
+      position: static;
+      white-space: pre;
+      flex: 0 0 auto;
+    }
+    .simple-mode .body {
+      flex: 1 1 auto;
+    }
+    .summary {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      line-height: var(--line-advance);
+      font-size: var(--font-size);
+      font-family: var(--font-family);
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-break: strict;
+      box-sizing: border-box;
+    }
+    .summary[contenteditable] {
+      outline: none;
+    }
+    .summary.overflow {
+      box-shadow: inset 0 0 0 2px rgba(210, 60, 60, 0.8);
+    }
+    .summary.overflow-attention {
+      box-shadow: inset 0 0 0 2px rgba(210, 60, 60, 0.8);
+    }
+    .role,
+    .body {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      line-height: var(--line-advance);
+      font-size: var(--font-size);
+      font-family: var(--font-family);
+      color: var(--text);
+    }
+    .role {
+      white-space: pre;
+    }
+    .role .role-token {
+      background-color: transparent;
+    }
+    .body {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      line-height: var(--line-advance);
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-break: strict;
+      box-sizing: border-box;
+      padding-top: var(--role-height);
+      min-width: var(--line-advance);
+    }
+    .role[contenteditable],
+    .body[contenteditable] {
+      outline: none;
+    }
+    .tcy {
+      text-combine-upright: all;
+    }
+    .status {
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      color: #666666;
+    }
+    .selection-mode .body,
+    .selection-mode .role {
+      caret-color: transparent;
+      cursor: default;
+    }
+    .selection-mode {
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="status" id="status">WebView2 の準備中です</div>
+  </div>
+  <script>
+    const status = document.getElementById('status');
+    const wrap = document.querySelector('.wrap');
+    let currentDocument = null;
+    let lastSettings = null;
+    let pendingFocus = null;
+    let layoutState = null;
+    let layoutUpdateHandle = null;
+    const layoutUpdateQueue = new Set();
+    let selectionUpdateHandle = null;
+    let pagesHost = null;
+    let recordElements = [];
+    let recordPageMap = new Map();
+    let overflowRecords = new Set();
+    let summaryPageElements = [];
+    let summaryOverflowPages = new Set();
+    let summaryMode = false;
+    let pdfMode = false;
+    let lastInitMessage = null;
+    let simpleMode = false;
+    let totalPages = 1;
+    let pendingPagination = false;
+    let selectionMode = false;
+    let selectionAnchorIndex = null;
+    let selectionRange = null;
+    let suppressLayoutStatus = false;
+    let showBreakMarkers = false;
+    let breakMarkerHandle = null;
+
+    function mmToPx(mm) {
+      return mm / 25.4 * 96;
+    }
+
+    const verticalGlyphMap = new Map([
+      ['、', '\uFE11'],
+      ['。', '\uFE12'],
+      ['，', '\uFE10'],
+      ['：', '\uFE13'],
+      ['；', '\uFE14'],
+      ['…', '\uFE19'],
+      ['（', '\uFE35'],
+      ['）', '\uFE36'],
+      ['｛', '\uFE37'],
+      ['｝', '\uFE38'],
+      ['〔', '\uFE39'],
+      ['〕', '\uFE3A'],
+      ['【', '\uFE3B'],
+      ['】', '\uFE3C'],
+      ['〈', '\uFE3F'],
+      ['〉', '\uFE40'],
+      ['《', '\uFE3D'],
+      ['》', '\uFE3E'],
+      ['「', '\uFE41'],
+      ['」', '\uFE42'],
+      ['『', '\uFE43'],
+      ['』', '\uFE44'],
+      ['［', '\uFE47'],
+      ['］', '\uFE48'],
+    ]);
+    const reverseVerticalGlyphMap = new Map(Array.from(verticalGlyphMap.entries()).map(([key, value]) => [value, key]));
+
+    function mapVerticalGlyph(ch) {
+      return verticalGlyphMap.get(ch) || ch;
+    }
+
+    function mapHorizontalGlyph(ch) {
+      return reverseVerticalGlyphMap.get(ch) || ch;
+    }
+
+    function isAsciiAlnum(ch) {
+      return /[0-9A-Za-z]/.test(ch);
+    }
+
+    function tokenizeText(text, options = {}) {
+      const useVerticalMap = options.useVerticalMap !== false;
+      const useTcy = options.useTcy !== false;
+      const tokens = [];
+      let index = 0;
+      while (index < text.length) {
+        const ch = text[index];
+        if (ch === '\r') {
+          index += 1;
+          continue;
+        }
+        if (ch === '\n') {
+          tokens.push({ type: 'newline' });
+          index += 1;
+          continue;
+        }
+        if (isAsciiAlnum(ch)) {
+          let run = ch;
+          index += 1;
+          while (index < text.length && isAsciiAlnum(text[index]) && run.length < 4) {
+            run += text[index];
+            index += 1;
+          }
+          if (useTcy && run.length >= 2) {
+            tokens.push({ type: 'tcy', text: run });
+          } else {
+            tokens.push({ type: 'text', text: useVerticalMap ? mapVerticalGlyph(run) : run });
+          }
+          continue;
+        }
+        tokens.push({ type: 'text', text: useVerticalMap ? mapVerticalGlyph(ch) : ch });
+        index += 1;
+      }
+      return tokens;
+    }
+
+    function takeTokens(tokens, maxSlots) {
+      const result = [];
+      let usedSlots = 0;
+      for (const token of tokens) {
+        if (token.type === 'newline') {
+          break;
+        }
+        if (usedSlots >= maxSlots) {
+          break;
+        }
+        result.push(token);
+        usedSlots += 1;
+      }
+      return result;
+    }
+
+    function scheduleLayoutUpdate(recordIndex) {
+      layoutUpdateQueue.add(recordIndex);
+      if (layoutUpdateHandle) {
+        return;
+      }
+      layoutUpdateHandle = requestAnimationFrame(() => {
+        layoutUpdateHandle = null;
+        for (const index of layoutUpdateQueue) {
+          const recordElement = getRecordElement(index);
+          updateRecordWidth(recordElement);
+        }
+        layoutUpdateQueue.clear();
+        if (isEditingActive()) {
+          pendingPagination = true;
+          return;
+        }
+        paginateRecords();
+      });
+    }
+
+    function scheduleBreakMarkerUpdate() {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+      if (breakMarkerHandle) {
+        return;
+      }
+      breakMarkerHandle = requestAnimationFrame(() => {
+        breakMarkerHandle = null;
+        updateBreakMarkers();
+      });
+    }
+
+    function prepareBreakOverlay(overlay, width, height) {
+      const dpr = window.devicePixelRatio || 1;
+      const targetWidth = Math.max(1, Math.round(width));
+      const targetHeight = Math.max(1, Math.round(height));
+      const pixelWidth = Math.round(targetWidth * dpr);
+      const pixelHeight = Math.round(targetHeight * dpr);
+      if (overlay.width !== pixelWidth || overlay.height !== pixelHeight) {
+        overlay.width = pixelWidth;
+        overlay.height = pixelHeight;
+        overlay.style.width = `${targetWidth}px`;
+        overlay.style.height = `${targetHeight}px`;
+      }
+      const ctx = overlay.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, targetWidth, targetHeight);
+      return { ctx, width: targetWidth, height: targetHeight };
+    }
+
+    function drawLineBreakMarkers(element, ctx, overlayRect, marker, markerSize) {
+      const brs = element.querySelectorAll('br');
+      if (!brs.length) {
+        return;
+      }
+      const range = document.createRange();
+      let startNode = element;
+      let startOffset = 0;
+      brs.forEach((br) => {
+        let rect = null;
+        range.setStart(startNode, startOffset);
+        range.setEndBefore(br);
+        const rects = range.getClientRects();
+        if (rects.length > 0) {
+          rect = rects[rects.length - 1];
+        } else {
+          const brRect = br.getBoundingClientRect();
+          if (brRect && brRect.height > 0) {
+            rect = brRect;
+          }
+        }
+        if (rect) {
+          const x = rect.left - overlayRect.left + 14;
+          const y = rect.bottom - overlayRect.top - markerSize + 6;
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(Math.PI / 2);
+          ctx.fillText(marker, 0, 0);
+          ctx.restore();
+        }
+        range.setStartAfter(br);
+        startNode = range.startContainer;
+        startOffset = range.startOffset;
+      });
+    }
+
+    function findPageLastRect(page) {
+      const elements = Array.from(page.querySelectorAll('.body, .summary'));
+      let best = null;
+      elements.forEach((element) => {
+        const rects = element.getClientRects();
+        if (!rects.length) {
+          return;
+        }
+        const lastRect = rects[rects.length - 1];
+        if (!best) {
+          best = lastRect;
+          return;
+        }
+        if (lastRect.left < best.left - 0.5) {
+          best = lastRect;
+          return;
+        }
+        if (Math.abs(lastRect.left - best.left) <= 0.5 && lastRect.bottom > best.bottom) {
+          best = lastRect;
+        }
+      });
+      return best;
+    }
+
+    function updateBreakMarkers() {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+      const pages = Array.from(pagesHost.querySelectorAll('.page'));
+      if (!showBreakMarkers || pdfMode || simpleMode) {
+        pages.forEach((page) => {
+          const overlay = page.querySelector('.break-overlay');
+          if (!overlay) {
+            return;
+          }
+          const { ctx, width, height } = prepareBreakOverlay(overlay, layoutState.contentWidth, layoutState.contentHeight);
+          ctx.clearRect(0, 0, width, height);
+        });
+        return;
+      }
+
+      const lineMarker = '\u21B5';
+      const pageMarker = '\u2A3D';
+      const markerSize = 10;
+
+      pages.forEach((page, pageIndex) => {
+        const overlay = page.querySelector('.break-overlay');
+        if (!overlay) {
+          return;
+        }
+        const { ctx, width, height } = prepareBreakOverlay(overlay, layoutState.contentWidth, layoutState.contentHeight);
+        ctx.fillStyle = '#888888';
+        ctx.font = `${markerSize}px "Segoe UI Symbol", "游ゴシック", "Yu Gothic", "Meiryo", sans-serif`;
+        ctx.textBaseline = 'top';
+
+        const overlayRect = overlay.getBoundingClientRect();
+        const targets = page.querySelectorAll('.body, .summary');
+        targets.forEach((element) => {
+          drawLineBreakMarkers(element, ctx, overlayRect, lineMarker, markerSize);
+        });
+
+        if (pageIndex < pages.length - 1) {
+          const lastRect = findPageLastRect(page);
+          if (lastRect) {
+            const x = lastRect.left - overlayRect.left + Math.max(2, (lastRect.width - markerSize) / 2);
+            const y = Math.min(
+              lastRect.bottom - overlayRect.top + (layoutState.lineAdvance - markerSize) / 2,
+              overlayRect.height - markerSize - 2
+            );
+            ctx.fillText(pageMarker, x, y);
+          }
+        }
+      });
+    }
+
+    function updateRecordWidth(recordElement) {
+      if (!recordElement || !layoutState) {
+        return;
+      }
+      const bodyElement = getBodyElement(recordElement);
+      if (!bodyElement) {
+        return;
+      }
+      const measuredWidth = Math.ceil(bodyElement.scrollWidth);
+      const width = Math.max(layoutState.lineAdvance, measuredWidth);
+      recordElement.style.width = `${width}px`;
+      recordElement.dataset.recordWidth = `${width}`;
+      bodyElement.style.width = `${width}px`;
+    }
+
+    function createPage() {
+      if (!layoutState) {
+        return { page: document.createElement('div'), content: document.createElement('div') };
+      }
+      const page = document.createElement('div');
+      page.className = 'page';
+      page.style.width = `${layoutState.pageWidth}px`;
+      page.style.height = `${layoutState.pageHeight}px`;
+      page.style.setProperty('--font-size', `${layoutState.fontSize}px`);
+      page.style.setProperty('--line-advance', `${layoutState.lineAdvance}px`);
+      page.style.setProperty('--role-height', `${layoutState.roleLabelHeight}px`);
+            page.style.setProperty('--font-family', layoutState.fontFamily);
+
+      const content = document.createElement('div');
+      content.className = 'content';
+      content.style.top = `${layoutState.marginTop}px`;
+      content.style.left = `${layoutState.marginLeft}px`;
+      content.style.width = `${layoutState.contentWidth}px`;
+      content.style.height = `${layoutState.contentHeight}px`;
+      content.style.gap = `${layoutState.recordGap}px`;
+      if (layoutState.showGuides) {
+        content.style.backgroundImage = `repeating-linear-gradient(
+          to left,
+          rgba(0, 0, 0, 0.08) 0px,
+          rgba(0, 0, 0, 0.08) 1px,
+          transparent 1px,
+          transparent ${layoutState.lineAdvance}px
+        )`;
+      } else {
+        content.style.backgroundImage = 'none';
+      }
+      content.style.backgroundSize = `${layoutState.lineAdvance}px 100%`;
+      content.style.backgroundPosition = 'right top';
+
+      const overlay = document.createElement('canvas');
+      overlay.className = 'break-overlay';
+      overlay.style.left = `${layoutState.marginLeft}px`;
+      overlay.style.top = `${layoutState.marginTop}px`;
+      overlay.style.width = `${layoutState.contentWidth}px`;
+      overlay.style.height = `${layoutState.contentHeight}px`;
+
+      page.appendChild(content);
+      page.appendChild(overlay);
+      return { page, content, overlay };
+    }
+
+    function paginateRecords() {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+
+      pagesHost.innerHTML = '';
+      recordPageMap = new Map();
+      overflowRecords = new Set();
+      totalPages = 1;
+      const availableWidth = Math.round(layoutState.contentWidth);
+      const pageEpsilon = 1.0;
+
+      let { page, content } = createPage();
+      let usedWidth = 0;
+      let pageIndex = 0;
+      page.dataset.pageIndex = `${pageIndex}`;
+
+      recordElements.forEach((recordElement, index) => {
+        recordElement.classList.remove('overflow');
+        const storedWidth = Number(recordElement.dataset.recordWidth);
+        const recordWidth = Number.isFinite(storedWidth) && storedWidth > 0
+          ? storedWidth
+          : Math.ceil(recordElement.getBoundingClientRect().width);
+        if (recordWidth > availableWidth + pageEpsilon) {
+          recordElement.classList.add('overflow');
+          overflowRecords.add(index);
+        }
+
+        const gapWidth = usedWidth === 0 ? 0 : layoutState.recordGap;
+        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > availableWidth + pageEpsilon) {
+          pagesHost.appendChild(page);
+          pageIndex += 1;
+          ({ page, content } = createPage());
+          page.dataset.pageIndex = `${pageIndex}`;
+          usedWidth = 0;
+        }
+
+        content.appendChild(recordElement);
+        recordPageMap.set(index, pageIndex);
+        usedWidth += gapWidth + recordWidth;
+      });
+
+      pagesHost.appendChild(page);
+      totalPages = Math.max(1, pageIndex + 1);
+      updatePageNumbers();
+      sendLayoutStatus();
+      scheduleBreakMarkerUpdate();
+    }
+
+    function updatePageNumbers() {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+      const pages = Array.from(pagesHost.querySelectorAll('.page'));
+      pages.forEach((page) => {
+        const index = Number(page.dataset.pageIndex || '0');
+        const existing = page.querySelector('.page-number');
+        if (!layoutState.pageNumberEnabled) {
+          if (existing) {
+            existing.remove();
+          }
+          return;
+        }
+        const numberText = `${index + 1}`;
+        if (existing) {
+          existing.textContent = numberText;
+          return;
+        }
+        const label = document.createElement('div');
+        label.className = 'page-number';
+        label.textContent = numberText;
+        page.appendChild(label);
+      });
+    }
+
+    function getFocusedRecordIndex() {
+      const active = document.activeElement;
+      if (!active) {
+        return null;
+      }
+      const recordElement = active.closest('.record');
+      if (!recordElement || !recordElement.dataset.recordIndex) {
+        return null;
+      }
+      const recordIndex = Number(recordElement.dataset.recordIndex);
+      return Number.isNaN(recordIndex) ? null : recordIndex;
+    }
+
+    function getRecordIndexFromNode(node) {
+      if (!node) {
+        return null;
+      }
+      const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+      if (!element || !element.closest) {
+        return null;
+      }
+      const recordElement = element.closest('.record');
+      if (!recordElement || !recordElement.dataset.recordIndex) {
+        return null;
+      }
+      const recordIndex = Number(recordElement.dataset.recordIndex);
+      return Number.isNaN(recordIndex) ? null : recordIndex;
+    }
+
+    function getSelectionRecordRange() {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        return null;
+      }
+      const startIndex = getRecordIndexFromNode(selection.anchorNode);
+      const endIndex = getRecordIndexFromNode(selection.focusNode);
+      if (startIndex === null || endIndex === null) {
+        return null;
+      }
+      return {
+        start: Math.min(startIndex, endIndex),
+        end: Math.max(startIndex, endIndex),
+      };
+    }
+
+    function sendSelectionRange() {
+      const range = getSelectionRecordRange();
+      postMessage({
+        type: 'selectionChanged',
+        startRecordIndex: range ? range.start : null,
+        endRecordIndex: range ? range.end : null,
+      });
+    }
+
+    function scheduleSelectionUpdate() {
+      if (selectionMode || summaryMode) {
+        return;
+      }
+      if (selectionUpdateHandle) {
+        return;
+      }
+      selectionUpdateHandle = requestAnimationFrame(() => {
+        selectionUpdateHandle = null;
+        sendSelectionRange();
+      });
+    }
+
+    function splitSummaryText(text) {
+      return (text || '').split('\f');
+    }
+
+    function collectSummaryText() {
+      if (!summaryPageElements.length) {
+        return '';
+      }
+      const sections = summaryPageElements.map((element) => normalizeTextFromElement(element));
+      return sections.join('\f');
+    }
+
+    function updateSummaryOverflow(pageIndex, summaryElement) {
+      if (!layoutState) {
+        return;
+      }
+      const measuredWidth = Math.ceil(summaryElement.scrollWidth);
+      const isOverflow = measuredWidth > layoutState.contentWidth;
+      if (isOverflow) {
+        summaryElement.classList.add('overflow');
+        summaryOverflowPages.add(pageIndex);
+      } else {
+        summaryElement.classList.remove('overflow');
+        summaryOverflowPages.delete(pageIndex);
+      }
+    }
+
+    function renderSummaryPages(sections, options = {}) {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+      const editable = options.editable !== false;
+      summaryPageElements = [];
+      summaryOverflowPages = new Set();
+
+      sections.forEach((sectionText, index) => {
+        const { page, content } = createPage();
+        page.dataset.pageIndex = `${index}`;
+        const summary = document.createElement('div');
+        summary.className = 'summary';
+        summary.style.height = `${layoutState.contentHeight}px`;
+        summary.style.width = `${layoutState.contentWidth}px`;
+        summary.dataset.field = 'summary';
+        summary.dataset.summaryIndex = `${index}`;
+        summary.dataset.pageIndex = `${index}`;
+        summary.setAttribute('contenteditable', editable ? 'true' : 'false');
+        appendTokens(summary, tokenizeText(sectionText || ''));
+        if (layoutState.showGuides) {
+          content.style.backgroundImage = `repeating-linear-gradient(
+            to left,
+            rgba(0, 0, 0, 0.08) 0px,
+            rgba(0, 0, 0, 0.08) 1px,
+            transparent 1px,
+            transparent ${layoutState.lineAdvance}px
+          )`;
+        } else {
+          content.style.backgroundImage = 'none';
+        }
+        content.style.backgroundSize = `${layoutState.lineAdvance}px 100%`;
+        content.style.backgroundPosition = 'right top';
+        content.appendChild(summary);
+        pagesHost.appendChild(page);
+        summaryPageElements.push(summary);
+      });
+
+      totalPages = Math.max(1, summaryPageElements.length);
+      updatePageNumbers();
+      requestAnimationFrame(() => {
+        summaryPageElements.forEach((summaryElement, index) => {
+          updateSummaryOverflow(index, summaryElement);
+        });
+        if (!suppressLayoutStatus) {
+          sendLayoutStatus();
+        }
+        scheduleBreakMarkerUpdate();
+        if (pendingFocus && pendingFocus.field === 'summary') {
+          focusSummary(pendingFocus.summaryIndex, pendingFocus.atStart);
+          pendingFocus = null;
+        }
+      });
+    }
+
+    function renderSimpleMode(records) {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+
+      wrap.classList.add('simple-mode');
+      pagesHost.innerHTML = '';
+      recordElements = [];
+      recordPageMap = new Map();
+      overflowRecords = new Set();
+      summaryPageElements = [];
+      summaryOverflowPages = new Set();
+
+      const frame = document.createElement('div');
+      frame.className = 'simple-frame';
+      frame.style.width = `${layoutState.contentWidth}px`;
+      frame.style.paddingLeft = `${layoutState.lineAdvance}px`;
+      frame.style.paddingRight = `${layoutState.lineAdvance}px`;
+      frame.style.paddingTop = `${layoutState.lineAdvance}px`;
+      frame.style.paddingBottom = `${layoutState.lineAdvance}px`;
+
+      const list = document.createElement('div');
+      list.className = 'simple-list';
+      list.style.setProperty('--record-gap', `${layoutState.recordGap}px`);
+      frame.appendChild(list);
+      pagesHost.appendChild(frame);
+
+      records.forEach((record, recordIndex) => {
+        const recordContainer = document.createElement('div');
+        recordContainer.className = 'record';
+        recordContainer.dataset.recordIndex = `${recordIndex}`;
+
+        const role = document.createElement('div');
+        role.className = 'role';
+        role.style.width = `${layoutState.roleLabelWidth}px`;
+        role.setAttribute('contenteditable', selectionMode ? 'false' : 'true');
+        role.dataset.field = 'roleName';
+        role.dataset.recordIndex = recordContainer.dataset.recordIndex;
+        appendTokens(role, tokenizeText(record.roleName || '', { useVerticalMap: false, useTcy: false }), true);
+        applyRoleColor(role, record.roleName || '');
+
+        const body = document.createElement('div');
+        body.className = 'body';
+        body.setAttribute('contenteditable', selectionMode ? 'false' : 'true');
+        body.dataset.field = 'body';
+        body.dataset.recordIndex = recordContainer.dataset.recordIndex;
+        appendTokens(body, tokenizeText(record.body || '', { useVerticalMap: false, useTcy: false }));
+
+        recordContainer.appendChild(role);
+        recordContainer.appendChild(body);
+        list.appendChild(recordContainer);
+        recordElements.push(recordContainer);
+      });
+
+      totalPages = 1;
+      sendLayoutStatus();
+      scheduleBreakMarkerUpdate();
+      if (selectionMode) {
+        applySelectionMode(true);
+      }
+    }
+
+    function createMeasurementHost() {
+      const host = document.createElement('div');
+      host.style.position = 'absolute';
+      host.style.left = '-99999px';
+      host.style.top = '-99999px';
+      host.style.visibility = 'hidden';
+      wrap.appendChild(host);
+      return host;
+    }
+
+    function buildRecordElements(records, editable) {
+      const elements = [];
+      const recordWidth = layoutState ? layoutState.lineAdvance : 16;
+      const contentHeight = layoutState ? layoutState.contentHeight : 0;
+      const roleLabelHeight = layoutState ? layoutState.roleLabelHeight : 0;
+      const lineAdvance = layoutState ? layoutState.lineAdvance : 0;
+      const roleCharsPerColumn = Math.max(1, Math.floor(roleLabelHeight / lineAdvance));
+
+      for (let recordIndex = 0; recordIndex < records.length; recordIndex += 1) {
+        const record = records[recordIndex] || {};
+        const bodyTokens = tokenizeText(record.body || '');
+        const roleTokens = tokenizeText(record.roleName || '');
+
+        const recordContainer = document.createElement('div');
+        recordContainer.className = 'record';
+        recordContainer.dataset.recordIndex = `${recordIndex}`;
+        recordContainer.style.height = `${contentHeight}px`;
+        recordContainer.style.width = `${recordWidth}px`;
+
+        const body = document.createElement('div');
+        body.className = 'body';
+        body.style.height = `${contentHeight}px`;
+        body.style.width = `${recordWidth}px`;
+        body.setAttribute('contenteditable', editable ? 'true' : 'false');
+        body.dataset.field = 'body';
+        body.dataset.recordIndex = recordContainer.dataset.recordIndex;
+        appendTokens(body, bodyTokens);
+
+        const role = document.createElement('div');
+        role.className = 'role';
+        role.style.height = `${roleLabelHeight}px`;
+        role.style.width = `${lineAdvance}px`;
+        role.style.position = 'absolute';
+        role.style.top = '0px';
+        role.style.right = '0px';
+        role.setAttribute('contenteditable', editable ? 'true' : 'false');
+        role.dataset.field = 'roleName';
+        role.dataset.recordIndex = recordContainer.dataset.recordIndex;
+        appendTokens(role, takeTokens(roleTokens, roleCharsPerColumn), true);
+        applyRoleColor(role, record.roleName || '');
+
+        recordContainer.appendChild(body);
+        recordContainer.appendChild(role);
+        elements.push(recordContainer);
+      }
+
+      return elements;
+    }
+
+    function appendBodyPages(records, options = {}) {
+      if (!layoutState || !pagesHost) {
+        return { pages: 0, hasOverflow: false };
+      }
+      const editable = options.editable !== false;
+      const startPageIndex = options.startPageIndex || 0;
+      const availableWidth = Math.round(layoutState.contentWidth);
+      const pageEpsilon = 1.0;
+      const measurementHost = createMeasurementHost();
+      const measurePage = document.createElement('div');
+      const measureContent = document.createElement('div');
+      measureContent.className = 'content';
+      measurePage.appendChild(measureContent);
+      measurementHost.appendChild(measurePage);
+
+      recordElements = buildRecordElements(records, editable);
+      recordElements.forEach((recordElement) => {
+        measureContent.appendChild(recordElement);
+        updateRecordWidth(recordElement);
+      });
+      measurementHost.remove();
+
+      let usedWidth = 0;
+      let pageIndex = startPageIndex;
+      let bodyPages = 0;
+      let hasOverflow = false;
+      let currentPage = null;
+      let currentContent = null;
+
+      const startPage = () => {
+        const created = createPage();
+        currentPage = created.page;
+        currentContent = created.content;
+        currentPage.dataset.pageIndex = `${pageIndex}`;
+        pagesHost.appendChild(currentPage);
+        bodyPages += 1;
+      };
+
+      startPage();
+
+      recordElements.forEach((recordElement, index) => {
+        recordElement.classList.remove('overflow');
+        const storedWidth = Number(recordElement.dataset.recordWidth);
+        const recordWidth = Number.isFinite(storedWidth) && storedWidth > 0
+          ? storedWidth
+          : Math.ceil(recordElement.getBoundingClientRect().width);
+        if (recordWidth > availableWidth + pageEpsilon) {
+          recordElement.classList.add('overflow');
+          hasOverflow = true;
+        }
+
+        const gapWidth = usedWidth === 0 ? 0 : layoutState.recordGap;
+        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > availableWidth + pageEpsilon) {
+          pageIndex += 1;
+          usedWidth = 0;
+          startPage();
+        }
+
+        currentContent.appendChild(recordElement);
+        usedWidth += gapWidth + recordWidth;
+      });
+
+      return { pages: bodyPages, hasOverflow };
+    }
+
+    function renderCombinedPdf(summaryText, records) {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+      suppressLayoutStatus = true;
+      pagesHost.innerHTML = '';
+      const sections = splitSummaryText(summaryText);
+      renderSummaryPages(sections, { editable: false });
+      const summaryPages = sections.length;
+      const bodyResult = appendBodyPages(records, { editable: false, startPageIndex: summaryPages });
+      totalPages = Math.max(1, summaryPages + bodyResult.pages);
+      updatePageNumbers();
+      requestAnimationFrame(() => {
+        const hasOverflow = summaryOverflowPages.size > 0 || bodyResult.hasOverflow;
+        postMessage({ type: 'pdfReady', hasOverflow });
+      });
+    }
+
+    function focusSummary(summaryIndex, atStart = false) {
+      const summaryElement = summaryPageElements[summaryIndex];
+      if (!summaryElement) {
+        return;
+      }
+      focusElement(summaryElement, atStart);
+    }
+
+    function syncSummaryInput() {
+      const summaryText = collectSummaryText();
+      postMessage({
+        type: 'inputPatch',
+        recordIndex: 0,
+        field: 'summary',
+        text: summaryText,
+      });
+      summaryPageElements.forEach((summaryElement, index) => {
+        updateSummaryOverflow(index, summaryElement);
+      });
+      if (!suppressLayoutStatus) {
+        sendLayoutStatus();
+      }
+      scheduleBreakMarkerUpdate();
+    }
+
+    function insertSummaryPageBreak(target) {
+      const index = Number(target.dataset.summaryIndex);
+      if (Number.isNaN(index)) {
+        return;
+      }
+      const info = getTextAndCaret(target);
+      const sections = summaryPageElements.map((element) => normalizeTextFromElement(element));
+      const before = info.text.slice(0, info.caret);
+      const after = info.text.slice(info.caret);
+      sections[index] = before;
+      sections.splice(index + 1, 0, after);
+      const summaryText = sections.join('\f');
+      postMessage({
+        type: 'inputPatch',
+        recordIndex: 0,
+        field: 'summary',
+        text: summaryText,
+      });
+      pendingFocus = { field: 'summary', summaryIndex: index + 1, atStart: true };
+      pagesHost.innerHTML = '';
+      renderSummaryPages(sections, { editable: true });
+    }
+
+    function updateSelectionHighlight(range) {
+      selectionRange = range;
+      recordElements.forEach((recordElement) => {
+        const index = Number(recordElement.dataset.recordIndex);
+        if (range && index >= range.start && index <= range.end) {
+          recordElement.classList.add('selected');
+        } else {
+          recordElement.classList.remove('selected');
+        }
+      });
+    }
+
+    function applySelectionMode(enabled) {
+      selectionMode = !!enabled;
+      if (selectionMode) {
+        wrap.classList.add('selection-mode');
+      } else {
+        wrap.classList.remove('selection-mode');
+        selectionAnchorIndex = null;
+        updateSelectionHighlight(null);
+        postMessage({
+          type: 'selectionChanged',
+          startRecordIndex: null,
+          endRecordIndex: null,
+        });
+      }
+      recordElements.forEach((recordElement) => {
+        const roleElement = getRoleElement(recordElement);
+        const bodyElement = getBodyElement(recordElement);
+        if (roleElement) {
+          roleElement.setAttribute('contenteditable', selectionMode ? 'false' : 'true');
+        }
+        if (bodyElement) {
+          bodyElement.setAttribute('contenteditable', selectionMode ? 'false' : 'true');
+        }
+      });
+    }
+
+    function handleSelectionModeClick(event) {
+      if (!selectionMode) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const recordElement = target.closest('.record');
+      if (!recordElement || !recordElement.dataset.recordIndex) {
+        return;
+      }
+      const recordIndex = Number(recordElement.dataset.recordIndex);
+      if (Number.isNaN(recordIndex)) {
+        return;
+      }
+      if (!event.shiftKey || selectionAnchorIndex === null) {
+        selectionAnchorIndex = recordIndex;
+        updateSelectionHighlight({ start: recordIndex, end: recordIndex });
+      } else {
+        const current = selectionRange;
+        if (current && recordIndex >= current.start && recordIndex <= current.end) {
+          if (current.start === current.end) {
+            selectionAnchorIndex = null;
+            updateSelectionHighlight(null);
+          } else if (recordIndex === current.start) {
+            updateSelectionHighlight({ start: current.start + 1, end: current.end });
+          } else if (recordIndex === current.end) {
+            updateSelectionHighlight({ start: current.start, end: current.end - 1 });
+          } else {
+            selectionAnchorIndex = recordIndex;
+            updateSelectionHighlight({ start: recordIndex, end: recordIndex });
+          }
+        } else {
+          updateSelectionHighlight({
+            start: Math.min(selectionAnchorIndex, recordIndex),
+            end: Math.max(selectionAnchorIndex, recordIndex),
+          });
+        }
+      }
+      postMessage({
+        type: 'selectionChanged',
+        startRecordIndex: selectionRange ? selectionRange.start : null,
+        endRecordIndex: selectionRange ? selectionRange.end : null,
+      });
+    }
+
+    function handleSelectionModeMouseBlock(event) {
+      if (!selectionMode) {
+        return;
+      }
+      event.preventDefault();
+    }
+
+    function sendLayoutStatus() {
+      if (suppressLayoutStatus) {
+        return;
+      }
+      const focusedIndex = getFocusedRecordIndex();
+      let currentPage = 1;
+      if (summaryMode) {
+        if (document.activeElement && document.activeElement instanceof HTMLElement) {
+          const pageIndex = Number(document.activeElement.dataset.pageIndex || '0');
+          if (!Number.isNaN(pageIndex)) {
+            currentPage = pageIndex + 1;
+          }
+        }
+      } else if (simpleMode) {
+        currentPage = 1;
+      } else if (focusedIndex !== null && recordPageMap.has(focusedIndex)) {
+        currentPage = (recordPageMap.get(focusedIndex) ?? 0) + 1;
+      }
+
+      postMessage({
+        type: 'layoutStatus',
+        totalPages,
+        currentPage,
+        overflowCount: summaryMode ? summaryOverflowPages.size : (simpleMode ? 0 : overflowRecords.size),
+        overflowRecords: summaryMode ? Array.from(summaryOverflowPages) : (simpleMode ? [] : Array.from(overflowRecords)),
+        focusedRecordIndex: summaryMode ? (currentPage - 1) : focusedIndex,
+      });
+    }
+
+    function trimTrailingEmptyLines(recordElement) {
+      const bodyElement = getBodyElement(recordElement);
+      if (!bodyElement) {
+        return false;
+      }
+      let changed = false;
+      while (bodyElement.lastChild) {
+        const node = bodyElement.lastChild;
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.nodeValue || '';
+          if (text.trim().length === 0) {
+            bodyElement.removeChild(node);
+            changed = true;
+            continue;
+          }
+          break;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const element = node;
+          if (element.nodeName === 'BR') {
+            bodyElement.removeChild(node);
+            changed = true;
+            continue;
+          }
+        }
+        break;
+      }
+      return changed;
+    }
+
+    function normalizeBodyAfterBlur(recordElement) {
+      const bodyElement = getBodyElement(recordElement);
+      if (!bodyElement) {
+        return false;
+      }
+      const raw = normalizeTextFromElement(bodyElement);
+      const trimmed = raw.replace(/\n+$/g, '');
+      if (trimmed === raw) {
+        return false;
+      }
+      appendTokens(bodyElement, tokenizeText(trimmed));
+      postMessage({
+        type: 'inputPatch',
+        recordIndex: Number(recordElement.dataset.recordIndex),
+        field: 'body',
+        text: trimmed,
+      });
+      scheduleLayoutUpdate(Number(recordElement.dataset.recordIndex));
+      return true;
+    }
+
+    function isEditingActive() {
+      const active = document.activeElement;
+      return !!(active && active.isContentEditable);
+    }
+
+    function appendTokens(container, tokens, markRoleTokens = false) {
+      container.textContent = '';
+      for (const token of tokens) {
+        if (token.type === 'newline') {
+          container.appendChild(document.createElement('br'));
+          continue;
+        }
+        const span = document.createElement('span');
+        if (token.type === 'tcy') {
+          span.className = 'tcy';
+        }
+        if (markRoleTokens) {
+          span.classList.add('role-token');
+        }
+        span.textContent = token.text;
+        container.appendChild(span);
+      }
+    }
+
+    function getRoleColor(roleName) {
+      if (!currentDocument) {
+        return '';
+      }
+      const dictionary = currentDocument.roleDictionary || currentDocument.RoleDictionary;
+      if (!dictionary) {
+        return '';
+      }
+      const key = roleName ? roleName.trim() : '';
+      return key ? (dictionary[key] || '') : '';
+    }
+
+    function applyRoleColor(roleElement, roleName) {
+      if (!roleElement) {
+        return;
+      }
+      const tokens = Array.from(roleElement.querySelectorAll('.role-token'));
+      if (!tokens.length) {
+        return;
+      }
+      const raw = roleName ? roleName.trim() : '';
+      if (!raw) {
+        tokens.forEach((token) => {
+          token.style.backgroundColor = '';
+        });
+        return;
+      }
+      const segments = raw.split('／').map((segment) => segment.trim()).filter((segment) => segment.length > 0);
+      if (segments.length <= 1) {
+        const color = getRoleColor(raw);
+        tokens.forEach((token) => {
+          token.style.backgroundColor = color || '';
+        });
+        return;
+      }
+      let segmentIndex = 0;
+      let segmentOffset = 0;
+      let currentSegment = segments[segmentIndex] || '';
+      tokens.forEach((token) => {
+        const text = token.textContent || '';
+        if (text === '／') {
+          token.style.backgroundColor = '';
+          segmentIndex = Math.min(segmentIndex + 1, segments.length - 1);
+          currentSegment = segments[segmentIndex] || '';
+          segmentOffset = 0;
+          return;
+        }
+        if (!currentSegment) {
+          token.style.backgroundColor = '';
+          return;
+        }
+        const color = getRoleColor(currentSegment);
+        token.style.backgroundColor = color || '';
+        segmentOffset += text.length;
+        if (segmentOffset >= currentSegment.length && segmentIndex < segments.length - 1) {
+          segmentIndex += 1;
+          currentSegment = segments[segmentIndex] || '';
+          segmentOffset = 0;
+        }
+      });
+    }
+
+    function applyRoleDictionaryUpdate(roleDictionary) {
+      if (!currentDocument) {
+        currentDocument = { records: [] };
+      }
+      currentDocument.roleDictionary = roleDictionary || {};
+      recordElements.forEach((recordElement) => {
+        const roleElement = getRoleElement(recordElement);
+        const roleName = roleElement ? normalizeTextFromElement(roleElement) : '';
+        applyRoleColor(roleElement, roleName);
+      });
+    }
+
+    function applyOverflowAttention(attentionRecords) {
+      const attentionSet = new Set(attentionRecords || []);
+      if (summaryMode) {
+        summaryPageElements.forEach((summaryElement) => {
+          const pageIndex = Number(summaryElement.dataset.pageIndex);
+          if (attentionSet.has(pageIndex)) {
+            summaryElement.classList.add('overflow-attention');
+          } else {
+            summaryElement.classList.remove('overflow-attention');
+          }
+        });
+        return;
+      }
+      recordElements.forEach((recordElement) => {
+        const recordIndex = Number(recordElement.dataset.recordIndex);
+        if (attentionSet.has(recordIndex)) {
+          recordElement.classList.add('overflow-attention');
+        } else {
+          recordElement.classList.remove('overflow-attention');
+        }
+      });
+    }
+
+    function extractText(node) {
+      let text = '';
+      function appendLineBreak() {
+        text += '\n';
+      }
+      function walk(current) {
+        if (current.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+          Array.from(current.childNodes).forEach(walk);
+          return;
+        }
+        if (current.nodeType === Node.TEXT_NODE) {
+          text += current.nodeValue || '';
+          return;
+        }
+        if (current.nodeType !== Node.ELEMENT_NODE) {
+          return;
+        }
+        const tag = current.tagName;
+        if (tag === 'BR') {
+          appendLineBreak();
+          return;
+        }
+        if (tag === 'DIV' || tag === 'P') {
+          Array.from(current.childNodes).forEach(walk);
+          appendLineBreak();
+          return;
+        }
+        Array.from(current.childNodes).forEach(walk);
+      }
+      walk(node);
+      return text;
+    }
+
+    function normalizeText(text) {
+      return text.replace(/\r/g, '').replace(/[\u200B\u00A0\uFEFF\u2060]/g, '');
+    }
+
+    function normalizeTextFromElement(element) {
+      const raw = normalizeText(extractText(element));
+      let result = '';
+      for (const ch of raw) {
+        result += mapHorizontalGlyph(ch);
+      }
+      return result;
+    }
+
+    function getRecordElement(recordIndex) {
+      return wrap.querySelector(`.record[data-record-index=\"${recordIndex}\"]`);
+    }
+
+    function getRoleElement(recordElement) {
+      return recordElement?.querySelector('.role[data-field="roleName"]') || null;
+    }
+
+    function getBodyElement(recordElement) {
+      return recordElement?.querySelector('.body[data-field="body"]') || null;
+    }
+
+    function getTextAndCaret(element) {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return { text: normalizeText(extractText(element)), caret: 0 };
+      }
+      const range = selection.getRangeAt(0);
+      const preRange = range.cloneRange();
+      preRange.selectNodeContents(element);
+      preRange.setEnd(range.endContainer, range.endOffset);
+      const fullText = normalizeText(extractText(element));
+      const caretText = normalizeText(extractText(preRange.cloneContents()));
+      return { text: fullText, caret: caretText.length };
+    }
+
+    function isCurrentLineEmpty(element) {
+      const info = getTextAndCaret(element);
+      const lineStart = info.text.lastIndexOf('\n', Math.max(0, info.caret - 1)) + 1;
+      const lineEndCandidate = info.text.indexOf('\n', info.caret);
+      const lineEnd = lineEndCandidate === -1 ? info.text.length : lineEndCandidate;
+      const lineText = info.text.slice(lineStart, lineEnd).trim();
+      return lineText.length === 0;
+    }
+
+    function focusElement(element, atStart = false) {
+      if (!element) {
+        return;
+      }
+      element.focus();
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      range.collapse(atStart);
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+
+    function focusRecord(recordIndex, field, atStart = false) {
+      const recordElement = getRecordElement(recordIndex);
+      if (!recordElement) {
+        return false;
+      }
+      if (field === 'roleName') {
+        focusElement(getRoleElement(recordElement), atStart);
+      } else {
+        focusElement(getBodyElement(recordElement), atStart);
+      }
+      return true;
+    }
+
+    function postMessage(message) {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage(message);
+      }
+    }
+
+    function insertTextAtSelection(text) {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return;
+      }
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      const node = document.createTextNode(text);
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    function insertLineBreakAtSelection() {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return;
+      }
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      const br = document.createElement('br');
+      range.insertNode(br);
+      range.setStartAfter(br);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    function syncInputForElement(target) {
+      const field = target.dataset.field;
+      const recordIndex = Number(target.dataset.recordIndex);
+      if (!field || Number.isNaN(recordIndex)) {
+        return;
+      }
+      const recordElement = getRecordElement(recordIndex);
+      if (!recordElement) {
+        return;
+      }
+      const text = field === 'roleName'
+        ? normalizeTextFromElement(target)
+        : normalizeTextFromElement(getBodyElement(recordElement));
+      postMessage({
+        type: 'inputPatch',
+        recordIndex,
+        field,
+        text,
+      });
+      if (field === 'roleName') {
+        applyRoleColor(target, text);
+      }
+      if (field === 'body') {
+        scheduleLayoutUpdate(recordIndex);
+      }
+      scheduleBreakMarkerUpdate();
+    }
+
+    function renderDocument(message) {
+      if (!message || message.type !== 'initDocument') {
+        return;
+      }
+
+      const doc = message.document || { records: [] };
+      if (!doc.records && doc.Records) {
+        doc.records = doc.Records;
+      }
+      if (doc.records) {
+        doc.records = doc.records.map((record) => ({
+          roleName: record.roleName ?? record.RoleName ?? '',
+          body: record.body ?? record.Body ?? '',
+        }));
+      }
+      currentDocument = doc;
+      lastInitMessage = message;
+      if (!pdfMode) {
+        suppressLayoutStatus = false;
+      }
+      const settings = message.settings || lastSettings || {};
+      lastSettings = settings;
+
+      const pageWidth = mmToPx(settings.pageWidthMm || 297);
+      const pageHeight = mmToPx(settings.pageHeightMm || 210);
+      const marginLeft = mmToPx(settings.marginLeftMm || 20);
+      const marginRight = mmToPx(settings.marginRightMm || 20);
+      const marginTop = mmToPx(settings.marginTopMm || 25);
+      const marginBottom = mmToPx(settings.marginBottomMm || 25);
+      const pageGap = settings.pageGapPx || 24;
+      const pageNumberEnabled = settings.pageNumberEnabled !== false;
+      summaryMode = settings.summaryMode === true;
+      simpleMode = settings.simpleMode === true && !summaryMode;
+      selectionMode = settings.selectionMode === true && !summaryMode;
+      wrap.classList.toggle('simple-mode', simpleMode);
+      showBreakMarkers = settings.showBreakMarkers === true;
+      wrap.classList.toggle('break-markers', showBreakMarkers);
+      const showGuides = settings.showGuides !== false;
+      const fontSize = (settings.fontSizePt || 10.5) / 72 * 96;
+      const lineSpacing = settings.lineSpacing || 1.0;
+      const lineAdvance = fontSize * lineSpacing;
+      const roleLabelHeightChars = settings.roleLabelHeightChars || 4.0;
+      const displayRoleChars = Math.max(1, roleLabelHeightChars - 1);
+      const roleLabelHeight = lineAdvance * displayRoleChars;
+      const roleLabelWidth = fontSize * roleLabelHeightChars;
+      const recordGap = lineAdvance * 1.0;
+      const contentWidth = pageWidth - marginLeft - marginRight;
+      const contentHeight = pageHeight - marginTop - marginBottom;
+      const bodyHeight = contentHeight - roleLabelHeight;
+      const roleCharsPerColumn = Math.max(1, Math.floor(roleLabelHeightChars));
+      layoutState = {
+        pageWidth,
+        pageHeight,
+        marginLeft,
+        marginTop,
+        contentWidth,
+        contentHeight,
+        recordGap,
+        fontSize,
+        lineAdvance,
+        roleLabelHeight,
+        roleLabelWidth,
+        fontFamily: settings.fontFamily || '"游明朝", "Yu Mincho", "MS Mincho", serif',
+        pageNumberEnabled,
+        pageGap,
+        showGuides,
+      };
+
+      wrap.classList.toggle('simple-mode', simpleMode);
+      wrap.innerHTML = '';
+      pagesHost = document.createElement('div');
+      pagesHost.className = 'pages';
+      pagesHost.style.setProperty('--page-gap', `${pageGap}px`);
+      wrap.appendChild(pagesHost);
+
+      if (summaryMode) {
+        recordElements = [];
+        recordPageMap = new Map();
+        overflowRecords = new Set();
+        applySelectionMode(false);
+        const summaryText = doc.summaryText ?? doc.SummaryText ?? '';
+        renderSummaryPages(splitSummaryText(summaryText), { editable: true });
+        return;
+      }
+
+      if (simpleMode) {
+        renderSimpleMode(doc.records || []);
+        return;
+      }
+
+      const { page, content } = createPage();
+      pagesHost.appendChild(page);
+
+      recordElements = [];
+      for (let recordIndex = 0; recordIndex < (doc.records || []).length; recordIndex += 1) {
+        const record = doc.records[recordIndex] || {};
+        const bodyText = record.body || '';
+        const bodyTokens = tokenizeText(bodyText);
+        const roleTokens = tokenizeText(record.roleName || '');
+        const recordWidth = lineAdvance;
+
+        const recordContainer = document.createElement('div');
+        recordContainer.className = 'record';
+        recordContainer.dataset.recordIndex = `${recordIndex}`;
+        recordContainer.style.height = `${contentHeight}px`;
+        recordContainer.style.width = `${recordWidth}px`;
+
+        const body = document.createElement('div');
+        body.className = 'body';
+        body.style.height = `${contentHeight}px`;
+        body.style.width = `${recordWidth}px`;
+        body.setAttribute('contenteditable', 'true');
+        body.dataset.field = 'body';
+        body.dataset.recordIndex = recordContainer.dataset.recordIndex;
+        appendTokens(body, bodyTokens);
+
+        const role = document.createElement('div');
+        role.className = 'role';
+        role.style.height = `${roleLabelHeight}px`;
+        role.style.width = `${lineAdvance}px`;
+        role.style.position = 'absolute';
+        role.style.top = '0px';
+        role.style.right = '0px';
+        role.setAttribute('contenteditable', 'true');
+        role.dataset.field = 'roleName';
+        role.dataset.recordIndex = recordContainer.dataset.recordIndex;
+        appendTokens(role, takeTokens(roleTokens, roleCharsPerColumn), true);
+        applyRoleColor(role, record.roleName || '');
+
+        recordContainer.appendChild(body);
+        recordContainer.appendChild(role);
+        content.appendChild(recordContainer);
+        recordElements.push(recordContainer);
+      }
+
+      requestAnimationFrame(() => {
+        const recordElements = wrap.querySelectorAll('.record');
+        recordElements.forEach((recordElement) => updateRecordWidth(recordElement));
+        paginateRecords();
+        applySelectionMode(selectionMode);
+        if (pendingFocus) {
+          focusRecord(pendingFocus.recordIndex, pendingFocus.field, pendingFocus.atStart);
+          pendingFocus = null;
+        }
+      });
+    }
+
+    function handleInput(event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      if (target.dataset.field === 'summary') {
+        syncSummaryInput();
+        return;
+      }
+      syncInputForElement(target);
+    }
+
+    function handleKeyDown(event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      if (event.ctrlKey && !event.altKey) {
+        const key = event.key.toLowerCase();
+        if (key === 'z') {
+          event.preventDefault();
+          postMessage({ type: 'command', name: 'undo' });
+          return;
+        }
+        if (key === 'y') {
+          event.preventDefault();
+          postMessage({ type: 'command', name: 'redo' });
+          return;
+        }
+      }
+      const field = target.dataset.field;
+      if (!field) {
+        return;
+      }
+
+      if (field === 'summary') {
+        if (event.key === 'Enter' && event.ctrlKey) {
+          event.preventDefault();
+          insertSummaryPageBreak(target);
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          insertLineBreakAtSelection();
+          syncSummaryInput();
+          return;
+        }
+        if (event.key === 'Tab') {
+          event.preventDefault();
+          insertTextAtSelection('\t');
+          syncSummaryInput();
+          return;
+        }
+        return;
+      }
+
+      const recordIndex = Number(target.dataset.recordIndex);
+      if (Number.isNaN(recordIndex)) {
+        return;
+      }
+
+      const recordElement = getRecordElement(recordIndex);
+      if (!recordElement) {
+        return;
+      }
+      const roleElement = getRoleElement(recordElement);
+      const bodyElement = getBodyElement(recordElement);
+
+      if (event.ctrlKey && event.shiftKey && event.key === 'Enter') {
+        event.preventDefault();
+        if (recordIndex <= 0) {
+          pendingFocus = { recordIndex: 0, field: 'roleName', atStart: true };
+          postMessage({ type: 'command', name: 'insertBefore', recordIndex: 0 });
+          return;
+        }
+        pendingFocus = { recordIndex, field: 'roleName', atStart: true };
+        postMessage({ type: 'command', name: 'insertBefore', recordIndex });
+        return;
+      }
+
+      if (event.ctrlKey && event.key.startsWith('Arrow')) {
+        let nextIndex = recordIndex;
+        let nextField = field;
+        if (field === 'body') {
+          if (event.key === 'ArrowLeft') {
+            nextIndex = recordIndex + 1;
+            nextField = 'body';
+          } else if (event.key === 'ArrowRight') {
+            nextIndex = recordIndex - 1;
+            nextField = 'body';
+          } else if (event.key === 'ArrowUp') {
+            nextIndex = recordIndex;
+            nextField = 'roleName';
+          } else if (event.key === 'ArrowDown') {
+            nextIndex = recordIndex + 1;
+            nextField = 'roleName';
+          }
+        } else {
+          if (event.key === 'ArrowLeft') {
+            nextIndex = recordIndex + 1;
+            nextField = 'roleName';
+          } else if (event.key === 'ArrowRight') {
+            nextIndex = recordIndex - 1;
+            nextField = 'roleName';
+          } else if (event.key === 'ArrowUp') {
+            nextIndex = recordIndex - 1;
+            nextField = 'body';
+          } else if (event.key === 'ArrowDown') {
+            nextIndex = recordIndex;
+            nextField = 'body';
+          }
+        }
+
+        if (currentDocument && currentDocument.records) {
+          if (nextIndex >= 0 && nextIndex < currentDocument.records.length) {
+            event.preventDefault();
+            focusRecord(nextIndex, nextField, true);
+          } else {
+            event.preventDefault();
+            const atStart = event.key === 'ArrowRight' || event.key === 'ArrowUp';
+            focusElement(target, atStart);
+          }
+        }
+        return;
+      }
+
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        if (field === 'roleName') {
+          focusElement(bodyElement);
+        } else if (event.shiftKey) {
+          focusElement(roleElement);
+        } else {
+          insertTextAtSelection('\t');
+          syncInputForElement(target);
+        }
+        return;
+      }
+
+      if (event.key === 'Enter' && field === 'roleName') {
+        event.preventDefault();
+        focusElement(bodyElement);
+        return;
+      }
+
+      if (event.key === 'Enter' && field === 'body') {
+        event.preventDefault();
+        if (event.ctrlKey) {
+          const nextIndex = recordIndex + 1;
+          pendingFocus = { recordIndex: nextIndex, field: 'roleName', atStart: true };
+          postMessage({ type: 'command', name: 'insertAfter', recordIndex });
+          return;
+        }
+        if (!event.shiftKey && isCurrentLineEmpty(target)) {
+          const nextIndex = recordIndex + 1;
+          if (currentDocument && currentDocument.records && nextIndex < currentDocument.records.length) {
+            focusRecord(nextIndex, 'body', true);
+          } else {
+            pendingFocus = { recordIndex: nextIndex, field: 'body', atStart: true };
+            postMessage({ type: 'command', name: 'insertAfter', recordIndex });
+          }
+          return;
+        }
+        insertLineBreakAtSelection();
+        syncInputForElement(target);
+        return;
+      }
+
+      if (event.key === 'Backspace') {
+        const roleText = roleElement ? normalizeTextFromElement(roleElement).trim() : '';
+        const bodyText = bodyElement ? normalizeTextFromElement(bodyElement).trim() : '';
+        if (roleText.length === 0 && bodyText.length === 0) {
+          event.preventDefault();
+          const focusIndex = Math.max(0, recordIndex - 1);
+          pendingFocus = { recordIndex: focusIndex, field: 'body', atStart: false };
+          postMessage({ type: 'command', name: 'deleteRecord', recordIndex });
+        }
+      }
+    }
+
+    if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.postMessage({ type: 'documentReady' });
+      wrap.addEventListener('input', handleInput, true);
+      wrap.addEventListener('keydown', handleKeyDown, true);
+      wrap.addEventListener('click', handleSelectionModeClick, true);
+      wrap.addEventListener('mousedown', handleSelectionModeMouseBlock, true);
+      wrap.addEventListener('dragstart', handleSelectionModeMouseBlock, true);
+      wrap.addEventListener('selectstart', handleSelectionModeMouseBlock, true);
+      document.addEventListener('selectionchange', () => {
+        scheduleSelectionUpdate();
+      });
+      wrap.addEventListener('focusin', () => {
+        sendLayoutStatus();
+      }, true);
+      wrap.addEventListener('focusout', () => {
+        setTimeout(() => {
+          if (pendingPagination && !isEditingActive()) {
+            pendingPagination = false;
+            paginateRecords();
+          }
+        }, 0);
+      }, true);
+      wrap.addEventListener('focusout', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        if (target.dataset.field !== 'body') {
+          return;
+        }
+        const recordElement = getRecordElement(Number(target.dataset.recordIndex));
+        if (!recordElement) {
+          return;
+        }
+        const related = event.relatedTarget;
+        if (related instanceof Node && recordElement.contains(related)) {
+          return;
+        }
+        if (trimTrailingEmptyLines(recordElement)) {
+          syncInputForElement(target);
+        }
+        normalizeBodyAfterBlur(recordElement);
+      }, true);
+      window.addEventListener('wheel', (event) => {
+        if (!event.ctrlKey) {
+          return;
+        }
+        event.preventDefault();
+        const direction = event.deltaY < 0 ? 1 : -1;
+        postMessage({ type: 'zoomDelta', direction });
+      }, { passive: false });
+      window.chrome.webview.addEventListener('message', (event) => {
+        const message = event.data;
+        if (!message || !message.type) {
+          return;
+        }
+        if (message.type === 'applyRoleDictionary') {
+          applyRoleDictionaryUpdate(message.roleDictionary);
+          return;
+        }
+        if (message.type === 'applyOverflowAttention') {
+          applyOverflowAttention(message.overflowAttentionRecords);
+          return;
+        }
+        if (message.type === 'applySelectionMode') {
+          applySelectionMode(message.selectionMode);
+          return;
+        }
+        if (message.type === 'enterPdfMode') {
+          pdfMode = true;
+          suppressLayoutStatus = true;
+          const summaryText = message.summaryText || (currentDocument ? (currentDocument.summaryText ?? currentDocument.SummaryText ?? '') : '');
+          renderCombinedPdf(summaryText, currentDocument ? currentDocument.records || [] : []);
+          return;
+        }
+        if (message.type === 'exitPdfMode') {
+          pdfMode = false;
+          suppressLayoutStatus = false;
+          if (lastInitMessage) {
+            renderDocument(lastInitMessage);
+          }
+          return;
+        }
+        renderDocument(message);
+      });
+      status.textContent = 'ドキュメント受信待ちです';
+    } else {
+      status.textContent = 'WebView2 で開いてください';
+    }
+  </script>
+</body>
+</html>

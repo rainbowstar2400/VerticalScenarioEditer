@@ -8,18 +8,18 @@ namespace VerticalScenarioEditer;
 public static class DocumentSettings
 {
     public const string DefaultFontFamilyName = "游明朝";
-    public const double DefaultFontSizePt = 10.5;
-    public const double LineSpacing = 1.0;
-    public const double RoleLabelHeightChars = 5.5;
+    public const double DefaultFontSizePt = 11.18;
+    public const double LineSpacing = 1.7;
+    public const double RoleLabelHeightChars = 4.0;
     public const double RecordGapChars = 1.0;
     public const double PageGapDip = 24.0;
 
-    public const double PageWidthMm = 210.0;
-    public const double PageHeightMm = 297.0;
-    public const double MarginLeftMm = 20.0;
-    public const double MarginRightMm = 20.0;
-    public const double MarginTopMm = 25.0;
-    public const double MarginBottomMm = 25.0;
+    public const double PageWidthMm = 297.0;
+    public const double PageHeightMm = 210.0;
+    public const double MarginLeftMm = 21.1;
+    public const double MarginRightMm = 21.1;
+    public const double MarginTopMm = 25.4;
+    public const double MarginBottomMm = 25.4;
 
     public static double PageWidthDip => MmToDip(PageWidthMm);
     public static double PageHeightDip => MmToDip(PageHeightMm);
@@ -29,10 +29,10 @@ public static class DocumentSettings
     public static double MarginBottomDip => MmToDip(MarginBottomMm);
     public static double FontSizeDip => PointsToDip(DefaultFontSizePt);
     public static double ColumnAdvanceDip => FontSizeDip * LineSpacing;
-    public static double RoleLabelHeightDip => ColumnAdvanceDip * RoleLabelHeightChars;
+    public static double RoleLabelHeightDip => FontSizeDip * RoleLabelHeightChars;
     public static double RecordGapDip => ColumnAdvanceDip * RecordGapChars;
     public static Thickness PageMargin => new Thickness(MarginLeftDip, MarginTopDip, MarginRightDip, MarginBottomDip);
-    public static FontFamily DefaultFontFamily { get; } = CreateDefaultFontFamily();
+    public static System.Windows.Media.FontFamily DefaultFontFamily { get; } = CreateDefaultFontFamily();
 
     private static double MmToDip(double mm)
     {
@@ -44,12 +44,12 @@ public static class DocumentSettings
         return points / 72.0 * 96.0;
     }
 
-    private static FontFamily CreateDefaultFontFamily()
+    private static System.Windows.Media.FontFamily CreateDefaultFontFamily()
     {
         var preferred = Fonts.SystemFontFamilies.FirstOrDefault(font =>
             string.Equals(font.Source, DefaultFontFamilyName, StringComparison.OrdinalIgnoreCase) ||
             font.FamilyNames.Values.Any(name => string.Equals(name, DefaultFontFamilyName, StringComparison.OrdinalIgnoreCase)));
 
-        return preferred ?? new FontFamily("MS Mincho");
+        return preferred ?? new System.Windows.Media.FontFamily("MS Mincho");
     }
 }
