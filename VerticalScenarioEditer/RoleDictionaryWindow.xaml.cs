@@ -37,11 +37,20 @@ public partial class RoleDictionaryWindow : Window
 
     private void RefreshEntries()
     {
-        var colorByRole = new Dictionary<string, string>(_document.RoleDictionary);
+        var colorByRole = new Dictionary<string, string>();
+        foreach (var entry in _document.RoleDictionary)
+        {
+            foreach (var role in ExtractRoleNames(entry.Key))
+            {
+                if (!colorByRole.ContainsKey(role))
+                {
+                    colorByRole[role] = entry.Value;
+                }
+            }
+        }
+
         var rolesFromRecords = _document.Records
-            .Select(record => record.RoleName?.Trim())
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => name!)
+            .SelectMany(record => ExtractRoleNames(record.RoleName))
             .Distinct()
             .OrderBy(name => name);
 
@@ -57,6 +66,28 @@ public partial class RoleDictionaryWindow : Window
                 RoleName = role,
                 Color = colorByRole.TryGetValue(role, out var color) ? color : string.Empty
             });
+        }
+    }
+
+    private static IEnumerable<string> ExtractRoleNames(string? roleName)
+    {
+        if (string.IsNullOrWhiteSpace(roleName))
+        {
+            yield break;
+        }
+
+        foreach (var part in roleName.Split('／', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = part.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                continue;
+            }
+            if (trimmed.StartsWith("シーン", StringComparison.Ordinal))
+            {
+                continue;
+            }
+            yield return trimmed;
         }
     }
 

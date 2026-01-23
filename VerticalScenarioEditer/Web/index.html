@@ -418,6 +418,7 @@
       recordPageMap = new Map();
       overflowRecords = new Set();
       totalPages = 1;
+      const availableWidth = Math.round(layoutState.contentWidth);
 
       let { page, content } = createPage();
       let usedWidth = 0;
@@ -430,13 +431,13 @@
         const recordWidth = Number.isFinite(storedWidth) && storedWidth > 0
           ? storedWidth
           : Math.ceil(recordElement.getBoundingClientRect().width);
-        if (recordWidth > layoutState.contentWidth) {
+        if (recordWidth > availableWidth) {
           recordElement.classList.add('overflow');
           overflowRecords.add(index);
         }
 
         const gapWidth = usedWidth === 0 ? 0 : layoutState.recordGap;
-        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > layoutState.contentWidth) {
+        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > availableWidth) {
           pagesHost.appendChild(page);
           pageIndex += 1;
           ({ page, content } = createPage());
@@ -755,6 +756,7 @@
       }
       const editable = options.editable !== false;
       const startPageIndex = options.startPageIndex || 0;
+      const availableWidth = Math.round(layoutState.contentWidth);
       const measurementHost = createMeasurementHost();
       const measurePage = document.createElement('div');
       const measureContent = document.createElement('div');
@@ -793,13 +795,13 @@
         const recordWidth = Number.isFinite(storedWidth) && storedWidth > 0
           ? storedWidth
           : Math.ceil(recordElement.getBoundingClientRect().width);
-        if (recordWidth > layoutState.contentWidth) {
+        if (recordWidth > availableWidth) {
           recordElement.classList.add('overflow');
           hasOverflow = true;
         }
 
         const gapWidth = usedWidth === 0 ? 0 : layoutState.recordGap;
-        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > layoutState.contentWidth) {
+        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > availableWidth) {
           pageIndex += 1;
           usedWidth = 0;
           startPage();
@@ -1115,10 +1117,49 @@
       if (!roleElement) {
         return;
       }
-      const color = roleName ? getRoleColor(roleName) : '';
-      const tokens = roleElement.querySelectorAll('.role-token');
+      const tokens = Array.from(roleElement.querySelectorAll('.role-token'));
+      if (!tokens.length) {
+        return;
+      }
+      const raw = roleName ? roleName.trim() : '';
+      if (!raw) {
+        tokens.forEach((token) => {
+          token.style.backgroundColor = '';
+        });
+        return;
+      }
+      const segments = raw.split('／').map((segment) => segment.trim()).filter((segment) => segment.length > 0);
+      if (segments.length <= 1) {
+        const color = getRoleColor(raw);
+        tokens.forEach((token) => {
+          token.style.backgroundColor = color || '';
+        });
+        return;
+      }
+      let segmentIndex = 0;
+      let segmentOffset = 0;
+      let currentSegment = segments[segmentIndex] || '';
       tokens.forEach((token) => {
+        const text = token.textContent || '';
+        if (text === '／') {
+          token.style.backgroundColor = '';
+          segmentIndex = Math.min(segmentIndex + 1, segments.length - 1);
+          currentSegment = segments[segmentIndex] || '';
+          segmentOffset = 0;
+          return;
+        }
+        if (!currentSegment) {
+          token.style.backgroundColor = '';
+          return;
+        }
+        const color = getRoleColor(currentSegment);
         token.style.backgroundColor = color || '';
+        segmentOffset += text.length;
+        if (segmentOffset >= currentSegment.length && segmentIndex < segments.length - 1) {
+          segmentIndex += 1;
+          currentSegment = segments[segmentIndex] || '';
+          segmentOffset = 0;
+        }
       });
     }
 
@@ -1354,7 +1395,6 @@
       if (!pdfMode) {
         suppressLayoutStatus = false;
       }
-      wrap.classList.toggle('simple-mode', simpleMode);
       const settings = message.settings || lastSettings || {};
       lastSettings = settings;
 
@@ -1369,6 +1409,7 @@
       summaryMode = settings.summaryMode === true;
       simpleMode = settings.simpleMode === true && !summaryMode;
       selectionMode = settings.selectionMode === true && !summaryMode;
+      wrap.classList.toggle('simple-mode', simpleMode);
       const showGuides = settings.showGuides !== false;
       const fontSize = (settings.fontSizePt || 10.5) / 72 * 96;
       const lineSpacing = settings.lineSpacing || 1.0;
@@ -1400,9 +1441,7 @@
         showGuides,
       };
 
-      if (!simpleMode) {
-        wrap.classList.remove('simple-mode');
-      }
+      wrap.classList.toggle('simple-mode', simpleMode);
       wrap.innerHTML = '';
       pagesHost = document.createElement('div');
       pagesHost.className = 'pages';

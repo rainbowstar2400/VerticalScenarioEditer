@@ -172,7 +172,9 @@ public partial class MainWindow : Window
 
         try
         {
-            var lines = File.ReadAllLines(dialog.FileName);
+            var rawText = ReadTextFile(dialog.FileName);
+            rawText = rawText.Replace("\uFEFF", string.Empty);
+            var lines = rawText.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
             _document = ParseFormattedText(lines);
             _currentFilePath = null;
             _isDirty = true;
@@ -181,6 +183,9 @@ public partial class MainWindow : Window
             UpdatePageNumberToggleState();
             UpdateGuideLineToggleState();
             UpdateSelectionModeToggleState();
+            UpdateSummaryModeToggleState();
+            UpdateSimpleModeToggleState();
+            UpdateSelectionModeAvailability();
             ResetOverflowWarningState();
             ClearSelectionRange();
             ClearHistory();
@@ -192,6 +197,18 @@ public partial class MainWindow : Window
         {
             System.Windows.MessageBox.Show(this, ex.Message, "読み込みに失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
         }
+    }
+
+    private static string ReadTextFile(string path)
+    {
+        using var reader = new StreamReader(path, Encoding.UTF8, true);
+        var text = reader.ReadToEnd();
+        if (text.IndexOf('\0') >= 0)
+        {
+            using var fallbackReader = new StreamReader(path, Encoding.Unicode, true);
+            text = fallbackReader.ReadToEnd();
+        }
+        return text;
     }
 
     private void OnFileNewClick(object sender, RoutedEventArgs e)
@@ -414,7 +431,8 @@ public partial class MainWindow : Window
 
         foreach (var rawLine in lines)
         {
-            var line = rawLine?.Trim() ?? string.Empty;
+            var line = rawLine ?? string.Empty;
+            line = line.TrimEnd();
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -426,6 +444,15 @@ public partial class MainWindow : Window
             {
                 line = trimmed;
             }
+
+            if (line.StartsWith('「') || line.StartsWith('（'))
+            {
+                record.RoleName = string.Empty;
+                record.Body = line;
+                document.Records.Add(record);
+                continue;
+            }
+
             var openIndex = line.IndexOf('「');
             var parenIndex = line.IndexOf('（');
             if (line.StartsWith('【') && line.EndsWith('】') && line.Contains('：') && line.StartsWith("【シーン", StringComparison.Ordinal))
