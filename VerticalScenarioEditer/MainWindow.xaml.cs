@@ -38,6 +38,9 @@ public partial class MainWindow : Window
     private bool _isDirty;
     private bool _suppressToggleEvents;
     private TaskCompletionSource<bool>? _pdfReadyTcs;
+    private bool _isApplyingHistory;
+    private readonly System.Collections.Generic.Stack<DocumentState> _undoStack = new();
+    private readonly System.Collections.Generic.Stack<DocumentState> _redoStack = new();
 
     public MainWindow()
     {
@@ -136,6 +139,7 @@ public partial class MainWindow : Window
             UpdateSelectionModeAvailability();
             ResetOverflowWarningState();
             ClearSelectionRange();
+            ClearHistory();
             UpdateStatusBar();
         }
         catch (Exception ex)
@@ -176,6 +180,7 @@ public partial class MainWindow : Window
             UpdateSelectionModeToggleState();
             ResetOverflowWarningState();
             ClearSelectionRange();
+            ClearHistory();
             UpdateStatusBar();
             SendDocumentToWebView();
             SendRoleDictionaryToWebView();
@@ -203,6 +208,7 @@ public partial class MainWindow : Window
         UpdateSelectionModeToggleState();
         ResetOverflowWarningState();
         ClearSelectionRange();
+        ClearHistory();
         UpdateStatusBar();
         SendDocumentToWebView();
         SendRoleDictionaryToWebView();
@@ -274,8 +280,19 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnUndoClick(object sender, RoutedEventArgs e)
+    {
+        Undo();
+    }
+
+    private void OnRedoClick(object sender, RoutedEventArgs e)
+    {
+        Redo();
+    }
+
     private void OnRoleDictionaryClick(object sender, RoutedEventArgs e)
     {
+        var snapshot = CloneDocument(_document);
         var window = new RoleDictionaryWindow(_document)
         {
             Owner = this
@@ -283,6 +300,7 @@ public partial class MainWindow : Window
 
         if (window.ShowDialog() == true)
         {
+            PushUndoState(snapshot);
             MarkDirty();
             SendDocumentToWebView();
             SendRoleDictionaryToWebView();
@@ -670,6 +688,7 @@ public partial class MainWindow : Window
         {
             if (record.RoleName != text)
             {
+                PushUndoState();
                 MarkDirty();
             }
             record.RoleName = text;
@@ -678,6 +697,7 @@ public partial class MainWindow : Window
         {
             if (record.Body != text)
             {
+                PushUndoState();
                 MarkDirty();
             }
             record.Body = text;
@@ -686,6 +706,7 @@ public partial class MainWindow : Window
         {
             if (_document.SummaryText != text)
             {
+                PushUndoState();
                 MarkDirty();
             }
             _document.SummaryText = text;
@@ -702,6 +723,17 @@ public partial class MainWindow : Window
         }
 
         var name = nameProperty.GetString();
+        if (name == "undo")
+        {
+            Undo();
+            return;
+        }
+        if (name == "redo")
+        {
+            Redo();
+            return;
+        }
+
         if (!root.TryGetProperty("recordIndex", out var indexProperty) || !indexProperty.TryGetInt32(out var recordIndex))
         {
             return;
@@ -715,18 +747,21 @@ public partial class MainWindow : Window
         switch (name)
         {
             case "insertAfter":
+                PushUndoState();
                 _document.Records.Insert(recordIndex + 1, new ScriptRecord());
                 MarkDirty();
                 SendDocumentToWebView();
                 UpdateStatusBar();
                 break;
             case "insertBefore":
+                PushUndoState();
                 _document.Records.Insert(recordIndex, new ScriptRecord());
                 MarkDirty();
                 SendDocumentToWebView();
                 UpdateStatusBar();
                 break;
             case "deleteRecord":
+                PushUndoState();
                 _document.Records.RemoveAt(recordIndex);
                 MarkDirty();
                 EnsureAtLeastOneRecord();
@@ -742,6 +777,93 @@ public partial class MainWindow : Window
         {
             _document.Records.Add(new ScriptRecord());
         }
+    }
+
+    private void PushUndoState()
+    {
+        if (_isApplyingHistory)
+        {
+            return;
+        }
+        PushUndoState(CloneDocument(_document));
+    }
+
+    private void PushUndoState(DocumentState snapshot)
+    {
+        if (_isApplyingHistory)
+        {
+            return;
+        }
+        _undoStack.Push(snapshot);
+        _redoStack.Clear();
+    }
+
+    private void ClearHistory()
+    {
+        _undoStack.Clear();
+        _redoStack.Clear();
+    }
+
+    private DocumentState CloneDocument(DocumentState source)
+    {
+        var clone = DocumentState.CreateDefault();
+        clone.PageNumberEnabled = source.PageNumberEnabled;
+        clone.ShowGuides = source.ShowGuides;
+        clone.SummaryText = source.SummaryText ?? string.Empty;
+        clone.Records = new System.Collections.Generic.List<ScriptRecord>();
+        foreach (var record in source.Records)
+        {
+            clone.Records.Add(new ScriptRecord
+            {
+                RoleName = record.RoleName,
+                Body = record.Body
+            });
+        }
+
+        clone.RoleDictionary = new System.Collections.Generic.Dictionary<string, string>(source.RoleDictionary);
+        return clone;
+    }
+
+    private void ApplyDocumentState(DocumentState state)
+    {
+        _document = CloneDocument(state);
+        EnsureAtLeastOneRecord();
+        UpdatePageNumberToggleState();
+        UpdateGuideLineToggleState();
+        UpdateTitle();
+        UpdateStatusBar();
+        ResetOverflowWarningState();
+        ClearSelectionRange();
+        SendDocumentToWebView();
+        SendRoleDictionaryToWebView();
+    }
+
+    private void Undo()
+    {
+        if (_undoStack.Count == 0)
+        {
+            return;
+        }
+        _isApplyingHistory = true;
+        _redoStack.Push(CloneDocument(_document));
+        var previous = _undoStack.Pop();
+        _isDirty = true;
+        ApplyDocumentState(previous);
+        _isApplyingHistory = false;
+    }
+
+    private void Redo()
+    {
+        if (_redoStack.Count == 0)
+        {
+            return;
+        }
+        _isApplyingHistory = true;
+        _undoStack.Push(CloneDocument(_document));
+        var next = _redoStack.Pop();
+        _isDirty = true;
+        ApplyDocumentState(next);
+        _isApplyingHistory = false;
     }
 
     private void UpdateStatusBar()

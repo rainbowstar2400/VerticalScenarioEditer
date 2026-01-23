@@ -1387,6 +1387,19 @@
       if (!(target instanceof HTMLElement)) {
         return;
       }
+      if (event.shiftKey && !event.ctrlKey && !event.altKey) {
+        const key = event.key.toLowerCase();
+        if (key === 'z') {
+          event.preventDefault();
+          postMessage({ type: 'command', name: 'undo' });
+          return;
+        }
+        if (key === 'y') {
+          event.preventDefault();
+          postMessage({ type: 'command', name: 'redo' });
+          return;
+        }
+      }
       const field = target.dataset.field;
       if (!field) {
         return;
