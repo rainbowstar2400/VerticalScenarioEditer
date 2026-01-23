@@ -31,6 +31,9 @@ public partial class MainWindow : Window
     private readonly System.Collections.Generic.HashSet<int> _overflowWarnedOnceRecords = new();
     private readonly System.Collections.Generic.HashSet<int> _overflowWarnedAgainRecords = new();
     private readonly System.Collections.Generic.HashSet<int> _overflowAttentionRecords = new();
+    private int? _selectionStartRecordIndex;
+    private int? _selectionEndRecordIndex;
+    private bool _isSelectionMode;
 
     public MainWindow()
     {
@@ -40,6 +43,7 @@ public partial class MainWindow : Window
         EnsureAtLeastOneRecord();
         UpdateTitle();
         UpdatePageNumberToggleState();
+        UpdateSelectionModeToggleState();
         UpdateZoomUi(_appSettings.ZoomScale);
         UpdateStatusBar();
         Loaded += OnLoaded;
@@ -113,7 +117,9 @@ public partial class MainWindow : Window
             EnsureAtLeastOneRecord();
             UpdateTitle();
             UpdatePageNumberToggleState();
+            UpdateSelectionModeToggleState();
             ResetOverflowWarningState();
+            ClearSelectionRange();
             UpdateStatusBar();
         }
         catch (Exception ex)
@@ -189,8 +195,20 @@ public partial class MainWindow : Window
     private string BuildExportText()
     {
         var builder = new StringBuilder();
-        foreach (var record in _document.Records)
+        var start = _selectionStartRecordIndex;
+        var end = _selectionEndRecordIndex;
+        var hasSelection = start.HasValue && end.HasValue;
+        var selectionStart = hasSelection ? Math.Min(start!.Value, end!.Value) : 0;
+        var selectionEnd = hasSelection ? Math.Max(start!.Value, end!.Value) : _document.Records.Count - 1;
+        if (selectionStart < 0 || selectionEnd >= _document.Records.Count)
         {
+            selectionStart = 0;
+            selectionEnd = _document.Records.Count - 1;
+        }
+
+        for (var index = selectionStart; index <= selectionEnd && index < _document.Records.Count; index += 1)
+        {
+            var record = _document.Records[index];
             var role = record.RoleName?.Trim() ?? string.Empty;
             var body = record.Body ?? string.Empty;
             body = body.Replace("\r", string.Empty).Replace("\n", string.Empty);
@@ -307,7 +325,8 @@ public partial class MainWindow : Window
                 lineSpacing = DocumentSettings.LineSpacing,
                 pageGapPx = DocumentSettings.PageGapDip,
                 pageNumberEnabled = _document.PageNumberEnabled,
-                zoomScale = _appSettings.ZoomScale
+                zoomScale = _appSettings.ZoomScale,
+                selectionMode = _isSelectionMode
             }
         };
 
@@ -368,6 +387,9 @@ public partial class MainWindow : Window
                     break;
                 case "layoutStatus":
                     ApplyLayoutStatus(document.RootElement);
+                    break;
+                case "selectionChanged":
+                    ApplySelectionChanged(document.RootElement);
                     break;
             }
         }
@@ -492,6 +514,15 @@ public partial class MainWindow : Window
         PageNumberToggleMenuItem.IsChecked = _document.PageNumberEnabled;
     }
 
+    private void UpdateSelectionModeToggleState()
+    {
+        if (SelectionModeMenuItem == null)
+        {
+            return;
+        }
+        SelectionModeMenuItem.IsChecked = _isSelectionMode;
+    }
+
     private void ResetOverflowWarningState()
     {
         _overflowWarnedOnceRecords.Clear();
@@ -503,6 +534,12 @@ public partial class MainWindow : Window
         _currentPage = 1;
         _totalPages = 1;
         SendOverflowAttentionToWebView();
+    }
+
+    private void ClearSelectionRange()
+    {
+        _selectionStartRecordIndex = null;
+        _selectionEndRecordIndex = null;
     }
 
     private void UpdateZoomUi(double zoomScale)
@@ -694,6 +731,45 @@ public partial class MainWindow : Window
         return null;
     }
 
+    private void ApplySelectionChanged(JsonElement root)
+    {
+        var start = GetNullableRecordIndex(root, "startRecordIndex");
+        var end = GetNullableRecordIndex(root, "endRecordIndex");
+        if (!start.HasValue || !end.HasValue)
+        {
+            ClearSelectionRange();
+            return;
+        }
+
+        var normalizedStart = Math.Min(start.Value, end.Value);
+        var normalizedEnd = Math.Max(start.Value, end.Value);
+        if (normalizedStart < 0 || normalizedEnd >= _document.Records.Count)
+        {
+            ClearSelectionRange();
+            return;
+        }
+
+        _selectionStartRecordIndex = normalizedStart;
+        _selectionEndRecordIndex = normalizedEnd;
+    }
+
+    private static int? GetNullableRecordIndex(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+        if (property.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+        if (property.TryGetInt32(out var index))
+        {
+            return index;
+        }
+        return null;
+    }
+
     private void UpdateOverflowWarnings(System.Collections.Generic.HashSet<int> overflowRecords, int? focusedRecordIndex)
     {
         _overflowWarnedOnceRecords.RemoveWhere(index => !overflowRecords.Contains(index));
@@ -749,6 +825,27 @@ public partial class MainWindow : Window
         EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
     }
 
+    private void SendSelectionModeToWebView()
+    {
+        if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            type = "applySelectionMode",
+            selectionMode = _isSelectionMode
+        };
+
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+
+        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
+    }
+
     private static void TrySetPdfPageSize(CoreWebView2PrintSettings settings, double widthInches, double heightInches)
     {
         var type = settings.GetType();
@@ -790,5 +887,17 @@ public partial class MainWindow : Window
 
         _document.PageNumberEnabled = PageNumberToggleMenuItem.IsChecked == true;
         SendDocumentToWebView();
+    }
+
+    private void OnSelectionModeToggleChanged(object sender, RoutedEventArgs e)
+    {
+        if (SelectionModeMenuItem == null)
+        {
+            return;
+        }
+
+        _isSelectionMode = SelectionModeMenuItem.IsChecked == true;
+        ClearSelectionRange();
+        SendSelectionModeToWebView();
     }
 }

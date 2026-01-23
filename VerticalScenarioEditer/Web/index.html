@@ -104,6 +104,10 @@
     .record.overflow-attention .role {
       box-shadow: inset 0 0 0 2px rgba(210, 60, 60, 0.8);
     }
+    .record.selected .body,
+    .record.selected .role {
+      background-color: rgba(140, 210, 140, 0.25);
+    }
     .role,
     .body {
       writing-mode: vertical-rl;
@@ -142,6 +146,14 @@
       letter-spacing: 0.08em;
       color: #666666;
     }
+    .selection-mode .body,
+    .selection-mode .role {
+      caret-color: transparent;
+      cursor: default;
+    }
+    .selection-mode {
+      user-select: none;
+    }
   </style>
 </head>
 <body>
@@ -157,12 +169,16 @@
     let layoutState = null;
     let layoutUpdateHandle = null;
     const layoutUpdateQueue = new Set();
+    let selectionUpdateHandle = null;
     let pagesHost = null;
     let recordElements = [];
     let recordPageMap = new Map();
     let overflowRecords = new Set();
     let totalPages = 1;
     let pendingPagination = false;
+    let selectionMode = false;
+    let selectionAnchorIndex = null;
+    let selectionRange = null;
 
     function mmToPx(mm) {
       return mm / 25.4 * 96;
@@ -412,6 +428,152 @@
       }
       const recordIndex = Number(recordElement.dataset.recordIndex);
       return Number.isNaN(recordIndex) ? null : recordIndex;
+    }
+
+    function getRecordIndexFromNode(node) {
+      if (!node) {
+        return null;
+      }
+      const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+      if (!element || !element.closest) {
+        return null;
+      }
+      const recordElement = element.closest('.record');
+      if (!recordElement || !recordElement.dataset.recordIndex) {
+        return null;
+      }
+      const recordIndex = Number(recordElement.dataset.recordIndex);
+      return Number.isNaN(recordIndex) ? null : recordIndex;
+    }
+
+    function getSelectionRecordRange() {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        return null;
+      }
+      const startIndex = getRecordIndexFromNode(selection.anchorNode);
+      const endIndex = getRecordIndexFromNode(selection.focusNode);
+      if (startIndex === null || endIndex === null) {
+        return null;
+      }
+      return {
+        start: Math.min(startIndex, endIndex),
+        end: Math.max(startIndex, endIndex),
+      };
+    }
+
+    function sendSelectionRange() {
+      const range = getSelectionRecordRange();
+      postMessage({
+        type: 'selectionChanged',
+        startRecordIndex: range ? range.start : null,
+        endRecordIndex: range ? range.end : null,
+      });
+    }
+
+    function scheduleSelectionUpdate() {
+      if (selectionMode) {
+        return;
+      }
+      if (selectionUpdateHandle) {
+        return;
+      }
+      selectionUpdateHandle = requestAnimationFrame(() => {
+        selectionUpdateHandle = null;
+        sendSelectionRange();
+      });
+    }
+
+    function updateSelectionHighlight(range) {
+      selectionRange = range;
+      recordElements.forEach((recordElement) => {
+        const index = Number(recordElement.dataset.recordIndex);
+        if (range && index >= range.start && index <= range.end) {
+          recordElement.classList.add('selected');
+        } else {
+          recordElement.classList.remove('selected');
+        }
+      });
+    }
+
+    function applySelectionMode(enabled) {
+      selectionMode = !!enabled;
+      if (selectionMode) {
+        wrap.classList.add('selection-mode');
+      } else {
+        wrap.classList.remove('selection-mode');
+        selectionAnchorIndex = null;
+        updateSelectionHighlight(null);
+        postMessage({
+          type: 'selectionChanged',
+          startRecordIndex: null,
+          endRecordIndex: null,
+        });
+      }
+      recordElements.forEach((recordElement) => {
+        const roleElement = getRoleElement(recordElement);
+        const bodyElement = getBodyElement(recordElement);
+        if (roleElement) {
+          roleElement.setAttribute('contenteditable', selectionMode ? 'false' : 'true');
+        }
+        if (bodyElement) {
+          bodyElement.setAttribute('contenteditable', selectionMode ? 'false' : 'true');
+        }
+      });
+    }
+
+    function handleSelectionModeClick(event) {
+      if (!selectionMode) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const recordElement = target.closest('.record');
+      if (!recordElement || !recordElement.dataset.recordIndex) {
+        return;
+      }
+      const recordIndex = Number(recordElement.dataset.recordIndex);
+      if (Number.isNaN(recordIndex)) {
+        return;
+      }
+      if (!event.shiftKey || selectionAnchorIndex === null) {
+        selectionAnchorIndex = recordIndex;
+        updateSelectionHighlight({ start: recordIndex, end: recordIndex });
+      } else {
+        const current = selectionRange;
+        if (current && recordIndex >= current.start && recordIndex <= current.end) {
+          if (current.start === current.end) {
+            selectionAnchorIndex = null;
+            updateSelectionHighlight(null);
+          } else if (recordIndex === current.start) {
+            updateSelectionHighlight({ start: current.start + 1, end: current.end });
+          } else if (recordIndex === current.end) {
+            updateSelectionHighlight({ start: current.start, end: current.end - 1 });
+          } else {
+            selectionAnchorIndex = recordIndex;
+            updateSelectionHighlight({ start: recordIndex, end: recordIndex });
+          }
+        } else {
+          updateSelectionHighlight({
+            start: Math.min(selectionAnchorIndex, recordIndex),
+            end: Math.max(selectionAnchorIndex, recordIndex),
+          });
+        }
+      }
+      postMessage({
+        type: 'selectionChanged',
+        startRecordIndex: selectionRange ? selectionRange.start : null,
+        endRecordIndex: selectionRange ? selectionRange.end : null,
+      });
+    }
+
+    function handleSelectionModeMouseBlock(event) {
+      if (!selectionMode) {
+        return;
+      }
+      event.preventDefault();
     }
 
     function sendLayoutStatus() {
@@ -783,6 +945,7 @@
       const marginBottom = mmToPx(settings.marginBottomMm || 25);
       const pageGap = settings.pageGapPx || 24;
       const pageNumberEnabled = settings.pageNumberEnabled !== false;
+      selectionMode = settings.selectionMode === true;
       const fontSize = (settings.fontSizePt || 10.5) / 72 * 96;
       const lineSpacing = settings.lineSpacing || 1.0;
       const lineAdvance = fontSize * lineSpacing;
@@ -863,6 +1026,7 @@
         const recordElements = wrap.querySelectorAll('.record');
         recordElements.forEach((recordElement) => updateRecordWidth(recordElement));
         paginateRecords();
+        applySelectionMode(selectionMode);
         if (pendingFocus) {
           focusRecord(pendingFocus.recordIndex, pendingFocus.field, pendingFocus.atStart);
           pendingFocus = null;
@@ -1009,6 +1173,13 @@
       window.chrome.webview.postMessage({ type: 'documentReady' });
       wrap.addEventListener('input', handleInput, true);
       wrap.addEventListener('keydown', handleKeyDown, true);
+      wrap.addEventListener('click', handleSelectionModeClick, true);
+      wrap.addEventListener('mousedown', handleSelectionModeMouseBlock, true);
+      wrap.addEventListener('dragstart', handleSelectionModeMouseBlock, true);
+      wrap.addEventListener('selectstart', handleSelectionModeMouseBlock, true);
+      document.addEventListener('selectionchange', () => {
+        scheduleSelectionUpdate();
+      });
       wrap.addEventListener('focusin', () => {
         sendLayoutStatus();
       }, true);
@@ -1060,6 +1231,10 @@
         }
         if (message.type === 'applyOverflowAttention') {
           applyOverflowAttention(message.overflowAttentionRecords);
+          return;
+        }
+        if (message.type === 'applySelectionMode') {
+          applySelectionMode(message.selectionMode);
           return;
         }
         renderDocument(message);

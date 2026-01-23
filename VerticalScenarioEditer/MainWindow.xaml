@@ -20,6 +20,12 @@
             <MenuItem Header="_編集">
                 <MenuItem Header="テキストをコピー" Click="OnCopyTextClick" />
                 <MenuItem Header="役名辞書..." Click="OnRoleDictionaryClick" />
+                <Separator />
+                <MenuItem x:Name="SelectionModeMenuItem"
+                          Header="選択モード"
+                          IsCheckable="True"
+                          Checked="OnSelectionModeToggleChanged"
+                          Unchecked="OnSelectionModeToggleChanged" />
             </MenuItem>
             <MenuItem Header="_表示">
                 <MenuItem x:Name="PageNumberToggleMenuItem"
