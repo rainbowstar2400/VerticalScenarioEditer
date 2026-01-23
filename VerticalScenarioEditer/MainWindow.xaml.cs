@@ -34,8 +34,10 @@ public partial class MainWindow : Window
     private int? _selectionStartRecordIndex;
     private int? _selectionEndRecordIndex;
     private bool _isSelectionMode;
+    private bool _isSummaryMode;
     private bool _isDirty;
     private bool _suppressToggleEvents;
+    private TaskCompletionSource<bool>? _pdfReadyTcs;
 
     public MainWindow()
     {
@@ -47,6 +49,8 @@ public partial class MainWindow : Window
         UpdatePageNumberToggleState();
         UpdateGuideLineToggleState();
         UpdateSelectionModeToggleState();
+        UpdateSummaryModeToggleState();
+        UpdateSelectionModeAvailability();
         UpdateZoomUi(_appSettings.ZoomScale);
         UpdateStatusBar();
         Loaded += OnLoaded;
@@ -128,6 +132,8 @@ public partial class MainWindow : Window
             UpdatePageNumberToggleState();
             UpdateGuideLineToggleState();
             UpdateSelectionModeToggleState();
+            UpdateSummaryModeToggleState();
+            UpdateSelectionModeAvailability();
             ResetOverflowWarningState();
             ClearSelectionRange();
             UpdateStatusBar();
@@ -560,7 +566,8 @@ public partial class MainWindow : Window
                 showGuides = _document.ShowGuides,
                 roleLabelHeightChars = _appSettings.RoleLabelHeightChars,
                 zoomScale = _appSettings.ZoomScale,
-                selectionMode = _isSelectionMode
+                selectionMode = _isSelectionMode,
+                summaryMode = _isSummaryMode
             }
         };
 
@@ -625,6 +632,11 @@ public partial class MainWindow : Window
                 case "selectionChanged":
                     ApplySelectionChanged(document.RootElement);
                     break;
+                case "pdfReady":
+                    var hasOverflow = document.RootElement.TryGetProperty("hasOverflow", out var overflowProperty)
+                        && overflowProperty.ValueKind == JsonValueKind.True;
+                    _pdfReadyTcs?.TrySetResult(!hasOverflow);
+                    break;
             }
         }
         catch (Exception ex)
@@ -669,6 +681,14 @@ public partial class MainWindow : Window
                 MarkDirty();
             }
             record.Body = text;
+        }
+        else if (field == "summary")
+        {
+            if (_document.SummaryText != text)
+            {
+                MarkDirty();
+            }
+            _document.SummaryText = text;
         }
 
         UpdateStatusBar();
@@ -779,6 +799,24 @@ public partial class MainWindow : Window
             return;
         }
         SelectionModeMenuItem.IsChecked = _isSelectionMode;
+    }
+
+    private void UpdateSummaryModeToggleState()
+    {
+        if (SummaryModeMenuItem == null)
+        {
+            return;
+        }
+        SummaryModeMenuItem.IsChecked = _isSummaryMode;
+    }
+
+    private void UpdateSelectionModeAvailability()
+    {
+        if (SelectionModeMenuItem == null)
+        {
+            return;
+        }
+        SelectionModeMenuItem.IsEnabled = !_isSummaryMode;
     }
 
     private void ResetOverflowWarningState()
@@ -918,6 +956,15 @@ public partial class MainWindow : Window
 
         try
         {
+            if (!string.IsNullOrWhiteSpace(_document.SummaryText))
+            {
+                if (!await EnterPdfCombinedModeAsync())
+                {
+                    System.Windows.MessageBox.Show(this, "警告: 概要ページまたは本文に収まらない内容があるため、PDF出力を停止しました。", "PDF出力を停止しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                    return;
+                }
+            }
+
             var settings = EditorWebView.CoreWebView2.Environment.CreatePrintSettings();
             settings.ShouldPrintBackgrounds = true;
             settings.Orientation = CoreWebView2PrintOrientation.Landscape;
@@ -931,6 +978,13 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             System.Windows.MessageBox.Show(this, ex.Message, "PDF出力に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(_document.SummaryText))
+            {
+                ExitPdfCombinedMode();
+            }
         }
     }
 
@@ -1184,6 +1238,52 @@ public partial class MainWindow : Window
         SendDocumentToWebView();
     }
 
+    private async Task<bool> EnterPdfCombinedModeAsync()
+    {
+        if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
+        {
+            return false;
+        }
+
+        _pdfReadyTcs?.TrySetCanceled();
+        _pdfReadyTcs = new TaskCompletionSource<bool>();
+
+        var payload = new
+        {
+            type = "enterPdfMode",
+            summaryText = _document.SummaryText ?? string.Empty
+        };
+
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+
+        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
+        var completed = await Task.WhenAny(_pdfReadyTcs.Task, Task.Delay(1500));
+        return completed == _pdfReadyTcs.Task && _pdfReadyTcs.Task.Result;
+    }
+
+    private void ExitPdfCombinedMode()
+    {
+        if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            type = "exitPdfMode"
+        };
+
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+
+        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
+    }
+
     private bool ConfirmSaveIfDirty()
     {
         if (!_isDirty)
@@ -1218,7 +1318,33 @@ public partial class MainWindow : Window
         }
 
         _isSelectionMode = SelectionModeMenuItem.IsChecked == true;
+        if (_isSelectionMode)
+        {
+            _isSummaryMode = false;
+            UpdateSummaryModeToggleState();
+        }
         ClearSelectionRange();
         SendSelectionModeToWebView();
+        SendDocumentToWebView();
+        UpdateSelectionModeAvailability();
+    }
+
+    private void OnSummaryModeToggleChanged(object sender, RoutedEventArgs e)
+    {
+        if (SummaryModeMenuItem == null)
+        {
+            return;
+        }
+
+        _isSummaryMode = SummaryModeMenuItem.IsChecked == true;
+        if (_isSummaryMode)
+        {
+            _isSelectionMode = false;
+            UpdateSelectionModeToggleState();
+        }
+        ClearSelectionRange();
+        SendSelectionModeToWebView();
+        SendDocumentToWebView();
+        UpdateSelectionModeAvailability();
     }
 }

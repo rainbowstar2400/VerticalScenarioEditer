@@ -108,6 +108,26 @@
     .record.selected .role {
       background-color: rgba(140, 210, 140, 0.25);
     }
+    .summary {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      line-height: var(--line-advance);
+      font-size: var(--font-size);
+      font-family: var(--font-family);
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-break: strict;
+      box-sizing: border-box;
+    }
+    .summary[contenteditable] {
+      outline: none;
+    }
+    .summary.overflow {
+      box-shadow: inset 0 0 0 2px rgba(210, 60, 60, 0.8);
+    }
+    .summary.overflow-attention {
+      box-shadow: inset 0 0 0 2px rgba(210, 60, 60, 0.8);
+    }
     .role,
     .body {
       writing-mode: vertical-rl;
@@ -174,11 +194,17 @@
     let recordElements = [];
     let recordPageMap = new Map();
     let overflowRecords = new Set();
+    let summaryPageElements = [];
+    let summaryOverflowPages = new Set();
+    let summaryMode = false;
+    let pdfMode = false;
+    let lastInitMessage = null;
     let totalPages = 1;
     let pendingPagination = false;
     let selectionMode = false;
     let selectionAnchorIndex = null;
     let selectionRange = null;
+    let suppressLayoutStatus = false;
 
     function mmToPx(mm) {
       return mm / 25.4 * 96;
@@ -474,7 +500,7 @@
     }
 
     function scheduleSelectionUpdate() {
-      if (selectionMode) {
+      if (selectionMode || summaryMode) {
         return;
       }
       if (selectionUpdateHandle) {
@@ -484,6 +510,274 @@
         selectionUpdateHandle = null;
         sendSelectionRange();
       });
+    }
+
+    function splitSummaryText(text) {
+      return (text || '').split('\f');
+    }
+
+    function collectSummaryText() {
+      if (!summaryPageElements.length) {
+        return '';
+      }
+      const sections = summaryPageElements.map((element) => normalizeTextFromElement(element));
+      return sections.join('\f');
+    }
+
+    function updateSummaryOverflow(pageIndex, summaryElement) {
+      if (!layoutState) {
+        return;
+      }
+      const measuredWidth = Math.ceil(summaryElement.scrollWidth);
+      const isOverflow = measuredWidth > layoutState.contentWidth;
+      if (isOverflow) {
+        summaryElement.classList.add('overflow');
+        summaryOverflowPages.add(pageIndex);
+      } else {
+        summaryElement.classList.remove('overflow');
+        summaryOverflowPages.delete(pageIndex);
+      }
+    }
+
+    function renderSummaryPages(sections, options = {}) {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+      const editable = options.editable !== false;
+      summaryPageElements = [];
+      summaryOverflowPages = new Set();
+
+      sections.forEach((sectionText, index) => {
+        const { page, content } = createPage();
+        page.dataset.pageIndex = `${index}`;
+        const summary = document.createElement('div');
+        summary.className = 'summary';
+        summary.style.height = `${layoutState.contentHeight}px`;
+        summary.style.width = `${layoutState.contentWidth}px`;
+        summary.dataset.field = 'summary';
+        summary.dataset.summaryIndex = `${index}`;
+        summary.dataset.pageIndex = `${index}`;
+        summary.setAttribute('contenteditable', editable ? 'true' : 'false');
+        appendTokens(summary, tokenizeText(sectionText || ''));
+        if (layoutState.showGuides) {
+          content.style.backgroundImage = `repeating-linear-gradient(
+            to left,
+            rgba(0, 0, 0, 0.08) 0px,
+            rgba(0, 0, 0, 0.08) 1px,
+            transparent 1px,
+            transparent ${layoutState.lineAdvance}px
+          )`;
+        } else {
+          content.style.backgroundImage = 'none';
+        }
+        content.style.backgroundSize = `${layoutState.lineAdvance}px 100%`;
+        content.style.backgroundPosition = 'right top';
+        content.appendChild(summary);
+        pagesHost.appendChild(page);
+        summaryPageElements.push(summary);
+      });
+
+      totalPages = Math.max(1, summaryPageElements.length);
+      updatePageNumbers();
+      requestAnimationFrame(() => {
+        summaryPageElements.forEach((summaryElement, index) => {
+          updateSummaryOverflow(index, summaryElement);
+        });
+        if (!suppressLayoutStatus) {
+          sendLayoutStatus();
+        }
+        if (pendingFocus && pendingFocus.field === 'summary') {
+          focusSummary(pendingFocus.summaryIndex, pendingFocus.atStart);
+          pendingFocus = null;
+        }
+      });
+    }
+
+    function createMeasurementHost() {
+      const host = document.createElement('div');
+      host.style.position = 'absolute';
+      host.style.left = '-99999px';
+      host.style.top = '-99999px';
+      host.style.visibility = 'hidden';
+      wrap.appendChild(host);
+      return host;
+    }
+
+    function buildRecordElements(records, editable) {
+      const elements = [];
+      const recordWidth = layoutState ? layoutState.lineAdvance : 16;
+      const contentHeight = layoutState ? layoutState.contentHeight : 0;
+      const roleLabelHeight = layoutState ? layoutState.roleLabelHeight : 0;
+      const lineAdvance = layoutState ? layoutState.lineAdvance : 0;
+      const roleCharsPerColumn = Math.max(1, Math.floor(roleLabelHeight / lineAdvance));
+
+      for (let recordIndex = 0; recordIndex < records.length; recordIndex += 1) {
+        const record = records[recordIndex] || {};
+        const bodyTokens = tokenizeText(record.body || '');
+        const roleTokens = tokenizeText(record.roleName || '');
+
+        const recordContainer = document.createElement('div');
+        recordContainer.className = 'record';
+        recordContainer.dataset.recordIndex = `${recordIndex}`;
+        recordContainer.style.height = `${contentHeight}px`;
+        recordContainer.style.width = `${recordWidth}px`;
+
+        const body = document.createElement('div');
+        body.className = 'body';
+        body.style.height = `${contentHeight}px`;
+        body.style.width = `${recordWidth}px`;
+        body.setAttribute('contenteditable', editable ? 'true' : 'false');
+        body.dataset.field = 'body';
+        body.dataset.recordIndex = recordContainer.dataset.recordIndex;
+        appendTokens(body, bodyTokens);
+
+        const role = document.createElement('div');
+        role.className = 'role';
+        role.style.height = `${roleLabelHeight}px`;
+        role.style.width = `${lineAdvance}px`;
+        role.style.position = 'absolute';
+        role.style.top = '0px';
+        role.style.right = '0px';
+        role.setAttribute('contenteditable', editable ? 'true' : 'false');
+        role.dataset.field = 'roleName';
+        role.dataset.recordIndex = recordContainer.dataset.recordIndex;
+        appendTokens(role, takeTokens(roleTokens, roleCharsPerColumn), true);
+        applyRoleColor(role, record.roleName || '');
+
+        recordContainer.appendChild(body);
+        recordContainer.appendChild(role);
+        elements.push(recordContainer);
+      }
+
+      return elements;
+    }
+
+    function appendBodyPages(records, options = {}) {
+      if (!layoutState || !pagesHost) {
+        return { pages: 0, hasOverflow: false };
+      }
+      const editable = options.editable !== false;
+      const startPageIndex = options.startPageIndex || 0;
+      const measurementHost = createMeasurementHost();
+      const measurePage = document.createElement('div');
+      const measureContent = document.createElement('div');
+      measureContent.className = 'content';
+      measurePage.appendChild(measureContent);
+      measurementHost.appendChild(measurePage);
+
+      recordElements = buildRecordElements(records, editable);
+      recordElements.forEach((recordElement) => {
+        measureContent.appendChild(recordElement);
+        updateRecordWidth(recordElement);
+      });
+      measurementHost.remove();
+
+      let usedWidth = 0;
+      let pageIndex = startPageIndex;
+      let bodyPages = 0;
+      let hasOverflow = false;
+      let currentPage = null;
+      let currentContent = null;
+
+      const startPage = () => {
+        const created = createPage();
+        currentPage = created.page;
+        currentContent = created.content;
+        currentPage.dataset.pageIndex = `${pageIndex}`;
+        pagesHost.appendChild(currentPage);
+        bodyPages += 1;
+      };
+
+      startPage();
+
+      recordElements.forEach((recordElement, index) => {
+        recordElement.classList.remove('overflow');
+        const storedWidth = Number(recordElement.dataset.recordWidth);
+        const recordWidth = Number.isFinite(storedWidth) && storedWidth > 0
+          ? storedWidth
+          : Math.ceil(recordElement.getBoundingClientRect().width);
+        if (recordWidth > layoutState.contentWidth) {
+          recordElement.classList.add('overflow');
+          hasOverflow = true;
+        }
+
+        const gapWidth = usedWidth === 0 ? 0 : layoutState.recordGap;
+        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > layoutState.contentWidth) {
+          pageIndex += 1;
+          usedWidth = 0;
+          startPage();
+        }
+
+        currentContent.appendChild(recordElement);
+        usedWidth += gapWidth + recordWidth;
+      });
+
+      return { pages: bodyPages, hasOverflow };
+    }
+
+    function renderCombinedPdf(summaryText, records) {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+      suppressLayoutStatus = true;
+      pagesHost.innerHTML = '';
+      const sections = splitSummaryText(summaryText);
+      renderSummaryPages(sections, { editable: false });
+      const summaryPages = sections.length;
+      const bodyResult = appendBodyPages(records, { editable: false, startPageIndex: summaryPages });
+      totalPages = Math.max(1, summaryPages + bodyResult.pages);
+      updatePageNumbers();
+      requestAnimationFrame(() => {
+        const hasOverflow = summaryOverflowPages.size > 0 || bodyResult.hasOverflow;
+        postMessage({ type: 'pdfReady', hasOverflow });
+      });
+    }
+
+    function focusSummary(summaryIndex, atStart = false) {
+      const summaryElement = summaryPageElements[summaryIndex];
+      if (!summaryElement) {
+        return;
+      }
+      focusElement(summaryElement, atStart);
+    }
+
+    function syncSummaryInput() {
+      const summaryText = collectSummaryText();
+      postMessage({
+        type: 'inputPatch',
+        recordIndex: 0,
+        field: 'summary',
+        text: summaryText,
+      });
+      summaryPageElements.forEach((summaryElement, index) => {
+        updateSummaryOverflow(index, summaryElement);
+      });
+      if (!suppressLayoutStatus) {
+        sendLayoutStatus();
+      }
+    }
+
+    function insertSummaryPageBreak(target) {
+      const index = Number(target.dataset.summaryIndex);
+      if (Number.isNaN(index)) {
+        return;
+      }
+      const info = getTextAndCaret(target);
+      const sections = summaryPageElements.map((element) => normalizeTextFromElement(element));
+      const before = info.text.slice(0, info.caret);
+      const after = info.text.slice(info.caret);
+      sections[index] = before;
+      sections.splice(index + 1, 0, after);
+      const summaryText = sections.join('\f');
+      postMessage({
+        type: 'inputPatch',
+        recordIndex: 0,
+        field: 'summary',
+        text: summaryText,
+      });
+      pendingFocus = { field: 'summary', summaryIndex: index + 1, atStart: true };
+      pagesHost.innerHTML = '';
+      renderSummaryPages(sections, { editable: true });
     }
 
     function updateSelectionHighlight(range) {
@@ -579,9 +873,19 @@
     }
 
     function sendLayoutStatus() {
+      if (suppressLayoutStatus) {
+        return;
+      }
       const focusedIndex = getFocusedRecordIndex();
       let currentPage = 1;
-      if (focusedIndex !== null && recordPageMap.has(focusedIndex)) {
+      if (summaryMode) {
+        if (document.activeElement && document.activeElement instanceof HTMLElement) {
+          const pageIndex = Number(document.activeElement.dataset.pageIndex || '0');
+          if (!Number.isNaN(pageIndex)) {
+            currentPage = pageIndex + 1;
+          }
+        }
+      } else if (focusedIndex !== null && recordPageMap.has(focusedIndex)) {
         currentPage = (recordPageMap.get(focusedIndex) ?? 0) + 1;
       }
 
@@ -589,9 +893,9 @@
         type: 'layoutStatus',
         totalPages,
         currentPage,
-        overflowCount: overflowRecords.size,
-        overflowRecords: Array.from(overflowRecords),
-        focusedRecordIndex: focusedIndex,
+        overflowCount: summaryMode ? summaryOverflowPages.size : overflowRecords.size,
+        overflowRecords: summaryMode ? Array.from(summaryOverflowPages) : Array.from(overflowRecords),
+        focusedRecordIndex: summaryMode ? (currentPage - 1) : focusedIndex,
       });
     }
 
@@ -733,6 +1037,17 @@
 
     function applyOverflowAttention(attentionRecords) {
       const attentionSet = new Set(attentionRecords || []);
+      if (summaryMode) {
+        summaryPageElements.forEach((summaryElement) => {
+          const pageIndex = Number(summaryElement.dataset.pageIndex);
+          if (attentionSet.has(pageIndex)) {
+            summaryElement.classList.add('overflow-attention');
+          } else {
+            summaryElement.classList.remove('overflow-attention');
+          }
+        });
+        return;
+      }
       recordElements.forEach((recordElement) => {
         const recordIndex = Number(recordElement.dataset.recordIndex);
         if (attentionSet.has(recordIndex)) {
@@ -936,6 +1251,10 @@
         }));
       }
       currentDocument = doc;
+      lastInitMessage = message;
+      if (!pdfMode) {
+        suppressLayoutStatus = false;
+      }
       const settings = message.settings || lastSettings || {};
       lastSettings = settings;
 
@@ -947,7 +1266,8 @@
       const marginBottom = mmToPx(settings.marginBottomMm || 25);
       const pageGap = settings.pageGapPx || 24;
       const pageNumberEnabled = settings.pageNumberEnabled !== false;
-      selectionMode = settings.selectionMode === true;
+      summaryMode = settings.summaryMode === true;
+      selectionMode = settings.selectionMode === true && !summaryMode;
       const showGuides = settings.showGuides !== false;
       const fontSize = (settings.fontSizePt || 10.5) / 72 * 96;
       const lineSpacing = settings.lineSpacing || 1.0;
@@ -982,6 +1302,16 @@
       pagesHost.className = 'pages';
       pagesHost.style.setProperty('--page-gap', `${pageGap}px`);
       wrap.appendChild(pagesHost);
+
+      if (summaryMode) {
+        recordElements = [];
+        recordPageMap = new Map();
+        overflowRecords = new Set();
+        applySelectionMode(false);
+        const summaryText = doc.summaryText ?? doc.SummaryText ?? '';
+        renderSummaryPages(splitSummaryText(summaryText), { editable: true });
+        return;
+      }
 
       const { page, content } = createPage();
       pagesHost.appendChild(page);
@@ -1045,6 +1375,10 @@
       if (!(target instanceof HTMLElement)) {
         return;
       }
+      if (target.dataset.field === 'summary') {
+        syncSummaryInput();
+        return;
+      }
       syncInputForElement(target);
     }
 
@@ -1054,8 +1388,33 @@
         return;
       }
       const field = target.dataset.field;
+      if (!field) {
+        return;
+      }
+
+      if (field === 'summary') {
+        if (event.key === 'Enter' && event.ctrlKey) {
+          event.preventDefault();
+          insertSummaryPageBreak(target);
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          insertLineBreakAtSelection();
+          syncSummaryInput();
+          return;
+        }
+        if (event.key === 'Tab') {
+          event.preventDefault();
+          insertTextAtSelection('\t');
+          syncSummaryInput();
+          return;
+        }
+        return;
+      }
+
       const recordIndex = Number(target.dataset.recordIndex);
-      if (!field || Number.isNaN(recordIndex)) {
+      if (Number.isNaN(recordIndex)) {
         return;
       }
 
@@ -1126,10 +1485,13 @@
 
       if (event.key === 'Tab') {
         event.preventDefault();
-        if (event.shiftKey) {
+        if (field === 'roleName') {
+          focusElement(bodyElement);
+        } else if (event.shiftKey) {
           focusElement(roleElement);
         } else {
-          focusElement(bodyElement);
+          insertTextAtSelection('\t');
+          syncInputForElement(target);
         }
         return;
       }
@@ -1241,6 +1603,21 @@
         }
         if (message.type === 'applySelectionMode') {
           applySelectionMode(message.selectionMode);
+          return;
+        }
+        if (message.type === 'enterPdfMode') {
+          pdfMode = true;
+          suppressLayoutStatus = true;
+          const summaryText = message.summaryText || (currentDocument ? (currentDocument.summaryText ?? currentDocument.SummaryText ?? '') : '');
+          renderCombinedPdf(summaryText, currentDocument ? currentDocument.records || [] : []);
+          return;
+        }
+        if (message.type === 'exitPdfMode') {
+          pdfMode = false;
+          suppressLayoutStatus = false;
+          if (lastInitMessage) {
+            renderDocument(lastInitMessage);
+          }
           return;
         }
         renderDocument(message);

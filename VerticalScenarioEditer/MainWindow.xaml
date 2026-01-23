@@ -34,6 +34,11 @@
                           IsCheckable="True"
                           Checked="OnSelectionModeToggleChanged"
                           Unchecked="OnSelectionModeToggleChanged" />
+                <MenuItem x:Name="SummaryModeMenuItem"
+                          Header="概要モード"
+                          IsCheckable="True"
+                          Checked="OnSummaryModeToggleChanged"
+                          Unchecked="OnSummaryModeToggleChanged" />
             </MenuItem>
             <MenuItem Header="_表示">
                 <MenuItem x:Name="PageNumberToggleMenuItem"
