@@ -22,8 +22,8 @@
                 <MenuItem Header="閉じる" Click="OnFileCloseClick" />
             </MenuItem>
             <MenuItem Header="_編集">
-                <MenuItem Header="もとに戻す" InputGestureText="Shift+Z" Click="OnUndoClick" />
-                <MenuItem Header="やり直す" InputGestureText="Shift+Y" Click="OnRedoClick" />
+                <MenuItem Header="もとに戻す" InputGestureText="Ctrl+Z" Click="OnUndoClick" />
+                <MenuItem Header="やり直す" InputGestureText="Ctrl+Y" Click="OnRedoClick" />
                 <Separator />
                 <MenuItem Header="テキストをコピー">
                     <MenuItem Header="整形してコピー" Click="OnCopyTextClick" />

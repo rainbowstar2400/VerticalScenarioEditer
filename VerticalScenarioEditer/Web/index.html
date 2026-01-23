@@ -1084,12 +1084,11 @@
       container.textContent = '';
       for (const token of tokens) {
         if (token.type === 'newline') {
-          container.appendChild(document.createElement('br'));
           const placeholder = document.createElement('span');
           placeholder.className = 'line-placeholder';
           placeholder.textContent = '\u200B';
-          container.appendChild(placeholder);
-          continue;
+            container.appendChild(placeholder);
+                    continue;
         }
         const span = document.createElement('span');
         if (token.type === 'tcy') {
@@ -1341,7 +1340,7 @@
       const placeholder = document.createElement('span');
       placeholder.className = 'line-placeholder';
       placeholder.textContent = '\u200B';
-      range.insertNode(placeholder);
+        range.insertNode(placeholder);
       range.insertNode(br);
       range.setStartAfter(placeholder);
       range.collapse(true);
@@ -1539,7 +1538,7 @@
       if (!(target instanceof HTMLElement)) {
         return;
       }
-      if (event.shiftKey && !event.ctrlKey && !event.altKey) {
+      if (event.ctrlKey && !event.altKey) {
         const key = event.key.toLowerCase();
         if (key === 'z') {
           event.preventDefault();
