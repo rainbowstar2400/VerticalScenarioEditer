@@ -10,12 +10,16 @@
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_ファイル">
-                <MenuItem Header="_開く..." Click="OnFileOpenClick" />
+                <MenuItem Header="新規作成" Click="OnFileNewClick" />
+                <MenuItem Header="開く（.vse）..." Click="OnFileOpenClick" />
+                <MenuItem Header="整形済みテキストから読み込み..." Click="OnImportFormattedTextClick" />
                 <MenuItem Header="上書き保存" Click="OnFileSaveClick" />
                 <MenuItem Header="名前をつけて保存..." Click="OnFileSaveAsClick" />
                 <Separator />
                 <MenuItem Header="PDF出力..." Click="OnExportPdfClick" />
-                <MenuItem Header="テキスト書き出し..." Click="OnExportTextClick" />
+                <MenuItem Header="整形してテキストファイル出力..." Click="OnExportTextClick" />
+                <Separator />
+                <MenuItem Header="閉じる" Click="OnFileCloseClick" />
             </MenuItem>
             <MenuItem Header="_編集">
                 <MenuItem Header="テキストをコピー">
@@ -24,6 +28,7 @@
                 </MenuItem>
                 <MenuItem Header="役名辞書..." Click="OnRoleDictionaryClick" />
                 <Separator />
+                <MenuItem Header="環境設定..." Click="OnOpenSettingsClick" />
                 <MenuItem x:Name="SelectionModeMenuItem"
                           Header="選択モード"
                           IsCheckable="True"
@@ -36,6 +41,11 @@
                           IsCheckable="True"
                           Checked="OnPageNumberToggleChanged"
                           Unchecked="OnPageNumberToggleChanged" />
+                <MenuItem x:Name="GuideLineToggleMenuItem"
+                          Header="罫線の表示"
+                          IsCheckable="True"
+                          Checked="OnGuideLineToggleChanged"
+                          Unchecked="OnGuideLineToggleChanged" />
             </MenuItem>
         </Menu>
         <StatusBar DockPanel.Dock="Bottom">

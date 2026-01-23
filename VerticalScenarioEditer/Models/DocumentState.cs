@@ -6,6 +6,7 @@ public sealed class DocumentState
 {
     public List<ScriptRecord> Records { get; set; } = new();
     public bool PageNumberEnabled { get; set; } = true;
+    public bool ShowGuides { get; set; } = true;
     public Dictionary<string, string> RoleDictionary { get; set; } = new();
 
     public static DocumentState CreateDefault()
@@ -13,6 +14,7 @@ public sealed class DocumentState
         return new DocumentState
         {
             PageNumberEnabled = true,
+            ShowGuides = true,
             Records = new List<ScriptRecord>(),
             RoleDictionary = new Dictionary<string, string>()
         };

@@ -190,8 +190,6 @@
       ['，', '\uFE10'],
       ['：', '\uFE13'],
       ['；', '\uFE14'],
-      ['！', '\uFE15'],
-      ['？', '\uFE16'],
       ['…', '\uFE19'],
       ['（', '\uFE35'],
       ['）', '\uFE36'],
@@ -331,13 +329,17 @@
       content.style.width = `${layoutState.contentWidth}px`;
       content.style.height = `${layoutState.contentHeight}px`;
       content.style.gap = `${layoutState.recordGap}px`;
-      content.style.backgroundImage = `repeating-linear-gradient(
-        to left,
-        rgba(0, 0, 0, 0.08) 0px,
-        rgba(0, 0, 0, 0.08) 1px,
-        transparent 1px,
-        transparent ${layoutState.lineAdvance}px
-      )`;
+      if (layoutState.showGuides) {
+        content.style.backgroundImage = `repeating-linear-gradient(
+          to left,
+          rgba(0, 0, 0, 0.08) 0px,
+          rgba(0, 0, 0, 0.08) 1px,
+          transparent 1px,
+          transparent ${layoutState.lineAdvance}px
+        )`;
+      } else {
+        content.style.backgroundImage = 'none';
+      }
       content.style.backgroundSize = `${layoutState.lineAdvance}px 100%`;
       content.style.backgroundPosition = 'right top';
 
@@ -946,15 +948,18 @@
       const pageGap = settings.pageGapPx || 24;
       const pageNumberEnabled = settings.pageNumberEnabled !== false;
       selectionMode = settings.selectionMode === true;
+      const showGuides = settings.showGuides !== false;
       const fontSize = (settings.fontSizePt || 10.5) / 72 * 96;
       const lineSpacing = settings.lineSpacing || 1.0;
       const lineAdvance = fontSize * lineSpacing;
-      const roleLabelHeight = lineAdvance * 4.0;
+      const roleLabelHeightChars = settings.roleLabelHeightChars || 4.0;
+      const displayRoleChars = Math.max(1, roleLabelHeightChars - 1);
+      const roleLabelHeight = lineAdvance * displayRoleChars;
       const recordGap = lineAdvance * 1.0;
       const contentWidth = pageWidth - marginLeft - marginRight;
       const contentHeight = pageHeight - marginTop - marginBottom;
       const bodyHeight = contentHeight - roleLabelHeight;
-      const roleCharsPerColumn = Math.max(1, Math.floor(roleLabelHeight / lineAdvance));
+      const roleCharsPerColumn = Math.max(1, Math.floor(roleLabelHeightChars));
       layoutState = {
         pageWidth,
         pageHeight,
@@ -966,9 +971,10 @@
         fontSize,
         lineAdvance,
         roleLabelHeight,
-                fontFamily: settings.fontFamily || '"游明朝", "Yu Mincho", "MS Mincho", serif',
+        fontFamily: settings.fontFamily || '"游明朝", "Yu Mincho", "MS Mincho", serif',
         pageNumberEnabled,
         pageGap,
+        showGuides,
       };
 
       wrap.innerHTML = '';

@@ -34,6 +34,8 @@ public partial class MainWindow : Window
     private int? _selectionStartRecordIndex;
     private int? _selectionEndRecordIndex;
     private bool _isSelectionMode;
+    private bool _isDirty;
+    private bool _suppressToggleEvents;
 
     public MainWindow()
     {
@@ -43,6 +45,7 @@ public partial class MainWindow : Window
         EnsureAtLeastOneRecord();
         UpdateTitle();
         UpdatePageNumberToggleState();
+        UpdateGuideLineToggleState();
         UpdateSelectionModeToggleState();
         UpdateZoomUi(_appSettings.ZoomScale);
         UpdateStatusBar();
@@ -100,6 +103,11 @@ public partial class MainWindow : Window
 
     private void OnFileOpenClick(object sender, RoutedEventArgs e)
     {
+        if (!ConfirmSaveIfDirty())
+        {
+            return;
+        }
+
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Filter = FileFilter
@@ -114,9 +122,11 @@ public partial class MainWindow : Window
         {
             _document = DocumentFileService.Load(dialog.FileName);
             _currentFilePath = dialog.FileName;
+            _isDirty = false;
             EnsureAtLeastOneRecord();
             UpdateTitle();
             UpdatePageNumberToggleState();
+            UpdateGuideLineToggleState();
             UpdateSelectionModeToggleState();
             ResetOverflowWarningState();
             ClearSelectionRange();
@@ -128,6 +138,73 @@ public partial class MainWindow : Window
         }
 
         SendDocumentToWebView();
+    }
+
+    private void OnImportFormattedTextClick(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmSaveIfDirty())
+        {
+            return;
+        }
+
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "テキスト (*.txt)|*.txt|すべてのファイル (*.*)|*.*"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var lines = File.ReadAllLines(dialog.FileName);
+            _document = ParseFormattedText(lines);
+            _currentFilePath = null;
+            _isDirty = true;
+            EnsureAtLeastOneRecord();
+            UpdateTitle();
+            UpdatePageNumberToggleState();
+            UpdateGuideLineToggleState();
+            UpdateSelectionModeToggleState();
+            ResetOverflowWarningState();
+            ClearSelectionRange();
+            UpdateStatusBar();
+            SendDocumentToWebView();
+            SendRoleDictionaryToWebView();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "読み込みに失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+    }
+
+    private void OnFileNewClick(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmSaveIfDirty())
+        {
+            return;
+        }
+
+        _document = DocumentState.CreateDefault();
+        _currentFilePath = null;
+        _isDirty = false;
+        EnsureAtLeastOneRecord();
+        UpdateTitle();
+        UpdatePageNumberToggleState();
+        UpdateGuideLineToggleState();
+        UpdateSelectionModeToggleState();
+        ResetOverflowWarningState();
+        ClearSelectionRange();
+        UpdateStatusBar();
+        SendDocumentToWebView();
+        SendRoleDictionaryToWebView();
+    }
+
+    private void OnFileCloseClick(object sender, RoutedEventArgs e)
+    {
+        Close();
     }
 
     private void OnFileSaveClick(object sender, RoutedEventArgs e)
@@ -200,8 +277,31 @@ public partial class MainWindow : Window
 
         if (window.ShowDialog() == true)
         {
+            MarkDirty();
             SendDocumentToWebView();
             SendRoleDictionaryToWebView();
+        }
+    }
+
+    private void OnOpenSettingsClick(object sender, RoutedEventArgs e)
+    {
+        var window = new SettingsWindow(_appSettings)
+        {
+            Owner = this
+        };
+
+        if (window.ShowDialog() == true)
+        {
+            _appSettings.RoleLabelHeightChars = window.RoleLabelHeightChars;
+            SendDocumentToWebView();
+            try
+            {
+                AppSettingsStore.Save(_appSettings);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this, ex.Message, "設定の保存に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
         }
     }
 
@@ -229,7 +329,15 @@ public partial class MainWindow : Window
             string line;
             if (string.IsNullOrWhiteSpace(role))
             {
-                line = body;
+                line = $"\t{body}";
+            }
+            else if (role.StartsWith("シーン", StringComparison.Ordinal))
+            {
+                line = $"【{role}：{body}】";
+            }
+            else if (body.StartsWith('（') && body.EndsWith('）'))
+            {
+                line = $"{role}{body}";
             }
             else
             {
@@ -272,7 +380,84 @@ public partial class MainWindow : Window
         return builder.ToString().TrimEnd();
     }
 
-    private void SaveAs()
+    private static DocumentState ParseFormattedText(string[] lines)
+    {
+        var document = DocumentState.CreateDefault();
+        document.Records.Clear();
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            var record = new ScriptRecord();
+            var trimmed = line.TrimStart('\t');
+            if (trimmed != line)
+            {
+                line = trimmed;
+            }
+            var openIndex = line.IndexOf('「');
+            var parenIndex = line.IndexOf('（');
+            if (line.StartsWith('【') && line.EndsWith('】') && line.Contains('：') && line.StartsWith("【シーン", StringComparison.Ordinal))
+            {
+                var inner = line.Substring(1, line.Length - 2);
+                var separatorIndex = inner.IndexOf('：');
+                if (separatorIndex > 0)
+                {
+                    record.RoleName = inner.Substring(0, separatorIndex).Trim();
+                    record.Body = inner.Substring(separatorIndex + 1);
+                    document.Records.Add(record);
+                    continue;
+                }
+            }
+            var sceneSeparatorIndex = line.IndexOf('：');
+            if (sceneSeparatorIndex > 0 && line.StartsWith("シーン", StringComparison.Ordinal))
+            {
+                record.RoleName = line.Substring(0, sceneSeparatorIndex).Trim();
+                record.Body = line.Substring(sceneSeparatorIndex + 1);
+            }
+            else if (parenIndex > 0 && (openIndex < 0 || parenIndex < openIndex))
+            {
+                record.RoleName = line.Substring(0, parenIndex).Trim();
+                record.Body = line.Substring(parenIndex);
+            }
+            else if (openIndex > 0 && line.EndsWith('」'))
+            {
+                record.RoleName = line.Substring(0, openIndex).Trim();
+                record.Body = line.Substring(openIndex + 1, line.Length - openIndex - 2);
+            }
+            else if (openIndex > 0)
+            {
+                var closeIndex = line.LastIndexOf('」');
+                if (closeIndex > openIndex)
+                {
+                    record.RoleName = line.Substring(0, openIndex).Trim();
+                    var mainBody = line.Substring(openIndex + 1, closeIndex - openIndex - 1);
+                    var tail = line.Substring(closeIndex + 1);
+                    record.Body = $"{mainBody}{tail}";
+                }
+                else
+                {
+                    record.RoleName = string.Empty;
+                    record.Body = line;
+                }
+            }
+            else
+            {
+                record.RoleName = string.Empty;
+                record.Body = line;
+            }
+
+            document.Records.Add(record);
+        }
+
+        return document;
+    }
+
+    private bool SaveAs()
     {
         var dialog = new Microsoft.Win32.SaveFileDialog
         {
@@ -282,10 +467,10 @@ public partial class MainWindow : Window
 
         if (dialog.ShowDialog(this) != true)
         {
-            return;
+            return false;
         }
 
-        SaveToPath(dialog.FileName);
+        return SaveToPath(dialog.FileName);
     }
 
     private void SaveCopyAs()
@@ -311,24 +496,28 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SaveToPath(string path)
+    private bool SaveToPath(string path)
     {
         try
         {
             DocumentFileService.Save(path, _document);
             _currentFilePath = path;
+            _isDirty = false;
             UpdateTitle();
+            return true;
         }
         catch (Exception ex)
         {
             System.Windows.MessageBox.Show(this, ex.Message, "保存に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            return false;
         }
     }
 
     private void UpdateTitle()
     {
         var fileLabel = string.IsNullOrWhiteSpace(_currentFilePath) ? "無題" : _currentFilePath;
-        Title = $"縦書き脚本エディタ - {fileLabel}";
+        var dirtyMark = _isDirty ? " *" : string.Empty;
+        Title = $"縦書き脚本エディタ - {fileLabel}{dirtyMark}";
     }
 
     private void OnWebViewNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -368,6 +557,8 @@ public partial class MainWindow : Window
                 lineSpacing = DocumentSettings.LineSpacing,
                 pageGapPx = DocumentSettings.PageGapDip,
                 pageNumberEnabled = _document.PageNumberEnabled,
+                showGuides = _document.ShowGuides,
+                roleLabelHeightChars = _appSettings.RoleLabelHeightChars,
                 zoomScale = _appSettings.ZoomScale,
                 selectionMode = _isSelectionMode
             }
@@ -465,10 +656,18 @@ public partial class MainWindow : Window
         var record = _document.Records[recordIndex];
         if (field == "roleName")
         {
+            if (record.RoleName != text)
+            {
+                MarkDirty();
+            }
             record.RoleName = text;
         }
         else if (field == "body")
         {
+            if (record.Body != text)
+            {
+                MarkDirty();
+            }
             record.Body = text;
         }
 
@@ -497,16 +696,19 @@ public partial class MainWindow : Window
         {
             case "insertAfter":
                 _document.Records.Insert(recordIndex + 1, new ScriptRecord());
+                MarkDirty();
                 SendDocumentToWebView();
                 UpdateStatusBar();
                 break;
             case "insertBefore":
                 _document.Records.Insert(recordIndex, new ScriptRecord());
+                MarkDirty();
                 SendDocumentToWebView();
                 UpdateStatusBar();
                 break;
             case "deleteRecord":
                 _document.Records.RemoveAt(recordIndex);
+                MarkDirty();
                 EnsureAtLeastOneRecord();
                 SendDocumentToWebView();
                 UpdateStatusBar();
@@ -554,7 +756,20 @@ public partial class MainWindow : Window
         {
             return;
         }
+        _suppressToggleEvents = true;
         PageNumberToggleMenuItem.IsChecked = _document.PageNumberEnabled;
+        _suppressToggleEvents = false;
+    }
+
+    private void UpdateGuideLineToggleState()
+    {
+        if (GuideLineToggleMenuItem == null)
+        {
+            return;
+        }
+        _suppressToggleEvents = true;
+        GuideLineToggleMenuItem.IsChecked = _document.ShowGuides;
+        _suppressToggleEvents = false;
     }
 
     private void UpdateSelectionModeToggleState()
@@ -583,6 +798,16 @@ public partial class MainWindow : Window
     {
         _selectionStartRecordIndex = null;
         _selectionEndRecordIndex = null;
+    }
+
+    private void MarkDirty()
+    {
+        if (_isDirty)
+        {
+            return;
+        }
+        _isDirty = true;
+        UpdateTitle();
     }
 
     private void UpdateZoomUi(double zoomScale)
@@ -906,6 +1131,12 @@ public partial class MainWindow : Window
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (!ConfirmSaveIfDirty())
+        {
+            e.Cancel = true;
+            return;
+        }
+
         try
         {
             AppSettingsStore.Save(_appSettings);
@@ -927,9 +1158,56 @@ public partial class MainWindow : Window
         {
             return;
         }
+        if (_suppressToggleEvents)
+        {
+            return;
+        }
 
         _document.PageNumberEnabled = PageNumberToggleMenuItem.IsChecked == true;
+        MarkDirty();
         SendDocumentToWebView();
+    }
+
+    private void OnGuideLineToggleChanged(object sender, RoutedEventArgs e)
+    {
+        if (GuideLineToggleMenuItem == null)
+        {
+            return;
+        }
+        if (_suppressToggleEvents)
+        {
+            return;
+        }
+
+        _document.ShowGuides = GuideLineToggleMenuItem.IsChecked == true;
+        MarkDirty();
+        SendDocumentToWebView();
+    }
+
+    private bool ConfirmSaveIfDirty()
+    {
+        if (!_isDirty)
+        {
+            return true;
+        }
+
+        var result = System.Windows.MessageBox.Show(
+            this,
+            "変更が保存されていません。保存しますか？",
+            "変更の保存確認",
+            System.Windows.MessageBoxButton.YesNoCancel,
+            System.Windows.MessageBoxImage.Warning);
+        if (result == System.Windows.MessageBoxResult.Cancel)
+        {
+            return false;
+        }
+        if (result == System.Windows.MessageBoxResult.Yes)
+        {
+            return string.IsNullOrWhiteSpace(_currentFilePath)
+                ? SaveAs()
+                : SaveToPath(_currentFilePath);
+        }
+        return true;
     }
 
     private void OnSelectionModeToggleChanged(object sender, RoutedEventArgs e)
