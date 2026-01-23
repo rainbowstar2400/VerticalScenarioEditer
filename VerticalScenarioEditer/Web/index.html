@@ -57,6 +57,15 @@
       flex-direction: row-reverse;
       align-items: flex-start;
     }
+    .break-overlay {
+      position: absolute;
+      pointer-events: none;
+      display: none;
+      z-index: 2;
+    }
+    .break-markers .break-overlay {
+      display: block;
+    }
     @media print {
       html, body {
         background: #ffffff;
@@ -82,6 +91,9 @@
       }
       .content {
         background-image: none !important;
+      }
+      .break-overlay {
+        display: none !important;
       }
       .page-number {
         color: #000000;
@@ -239,6 +251,8 @@
     let selectionAnchorIndex = null;
     let selectionRange = null;
     let suppressLayoutStatus = false;
+    let showBreakMarkers = false;
+    let breakMarkerHandle = null;
 
     function mmToPx(mm) {
       return mm / 25.4 * 96;
@@ -356,6 +370,148 @@
       });
     }
 
+    function scheduleBreakMarkerUpdate() {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+      if (breakMarkerHandle) {
+        return;
+      }
+      breakMarkerHandle = requestAnimationFrame(() => {
+        breakMarkerHandle = null;
+        updateBreakMarkers();
+      });
+    }
+
+    function prepareBreakOverlay(overlay, width, height) {
+      const dpr = window.devicePixelRatio || 1;
+      const targetWidth = Math.max(1, Math.round(width));
+      const targetHeight = Math.max(1, Math.round(height));
+      const pixelWidth = Math.round(targetWidth * dpr);
+      const pixelHeight = Math.round(targetHeight * dpr);
+      if (overlay.width !== pixelWidth || overlay.height !== pixelHeight) {
+        overlay.width = pixelWidth;
+        overlay.height = pixelHeight;
+        overlay.style.width = `${targetWidth}px`;
+        overlay.style.height = `${targetHeight}px`;
+      }
+      const ctx = overlay.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, targetWidth, targetHeight);
+      return { ctx, width: targetWidth, height: targetHeight };
+    }
+
+    function drawLineBreakMarkers(element, ctx, overlayRect, marker, markerSize) {
+      const brs = element.querySelectorAll('br');
+      if (!brs.length) {
+        return;
+      }
+      const range = document.createRange();
+      let startNode = element;
+      let startOffset = 0;
+      brs.forEach((br) => {
+        let rect = null;
+        range.setStart(startNode, startOffset);
+        range.setEndBefore(br);
+        const rects = range.getClientRects();
+        if (rects.length > 0) {
+          rect = rects[rects.length - 1];
+        } else {
+          const brRect = br.getBoundingClientRect();
+          if (brRect && brRect.height > 0) {
+            rect = brRect;
+          }
+        }
+        if (rect) {
+          const x = rect.left - overlayRect.left + 14;
+          const y = rect.bottom - overlayRect.top - markerSize + 6;
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(Math.PI / 2);
+          ctx.fillText(marker, 0, 0);
+          ctx.restore();
+        }
+        range.setStartAfter(br);
+        startNode = range.startContainer;
+        startOffset = range.startOffset;
+      });
+    }
+
+    function findPageLastRect(page) {
+      const elements = Array.from(page.querySelectorAll('.body, .summary'));
+      let best = null;
+      elements.forEach((element) => {
+        const rects = element.getClientRects();
+        if (!rects.length) {
+          return;
+        }
+        const lastRect = rects[rects.length - 1];
+        if (!best) {
+          best = lastRect;
+          return;
+        }
+        if (lastRect.left < best.left - 0.5) {
+          best = lastRect;
+          return;
+        }
+        if (Math.abs(lastRect.left - best.left) <= 0.5 && lastRect.bottom > best.bottom) {
+          best = lastRect;
+        }
+      });
+      return best;
+    }
+
+    function updateBreakMarkers() {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+      const pages = Array.from(pagesHost.querySelectorAll('.page'));
+      if (!showBreakMarkers || pdfMode || simpleMode) {
+        pages.forEach((page) => {
+          const overlay = page.querySelector('.break-overlay');
+          if (!overlay) {
+            return;
+          }
+          const { ctx, width, height } = prepareBreakOverlay(overlay, layoutState.contentWidth, layoutState.contentHeight);
+          ctx.clearRect(0, 0, width, height);
+        });
+        return;
+      }
+
+      const lineMarker = '\u21B5';
+      const pageMarker = '\u2A3D';
+      const markerSize = 10;
+
+      pages.forEach((page, pageIndex) => {
+        const overlay = page.querySelector('.break-overlay');
+        if (!overlay) {
+          return;
+        }
+        const { ctx, width, height } = prepareBreakOverlay(overlay, layoutState.contentWidth, layoutState.contentHeight);
+        ctx.fillStyle = '#888888';
+        ctx.font = `${markerSize}px "Segoe UI Symbol", "游ゴシック", "Yu Gothic", "Meiryo", sans-serif`;
+        ctx.textBaseline = 'top';
+
+        const overlayRect = overlay.getBoundingClientRect();
+        const targets = page.querySelectorAll('.body, .summary');
+        targets.forEach((element) => {
+          drawLineBreakMarkers(element, ctx, overlayRect, lineMarker, markerSize);
+        });
+
+        if (pageIndex < pages.length - 1) {
+          const lastRect = findPageLastRect(page);
+          if (lastRect) {
+            const x = lastRect.left - overlayRect.left + Math.max(2, (lastRect.width - markerSize) / 2);
+            const y = Math.min(
+              lastRect.bottom - overlayRect.top + (layoutState.lineAdvance - markerSize) / 2,
+              overlayRect.height - markerSize - 2
+            );
+            ctx.fillText(pageMarker, x, y);
+          }
+        }
+      });
+    }
+
     function updateRecordWidth(recordElement) {
       if (!recordElement || !layoutState) {
         return;
@@ -405,8 +561,16 @@
       content.style.backgroundSize = `${layoutState.lineAdvance}px 100%`;
       content.style.backgroundPosition = 'right top';
 
+      const overlay = document.createElement('canvas');
+      overlay.className = 'break-overlay';
+      overlay.style.left = `${layoutState.marginLeft}px`;
+      overlay.style.top = `${layoutState.marginTop}px`;
+      overlay.style.width = `${layoutState.contentWidth}px`;
+      overlay.style.height = `${layoutState.contentHeight}px`;
+
       page.appendChild(content);
-      return { page, content };
+      page.appendChild(overlay);
+      return { page, content, overlay };
     }
 
     function paginateRecords() {
@@ -455,6 +619,7 @@
       totalPages = Math.max(1, pageIndex + 1);
       updatePageNumbers();
       sendLayoutStatus();
+      scheduleBreakMarkerUpdate();
     }
 
     function updatePageNumbers() {
@@ -624,6 +789,7 @@
         if (!suppressLayoutStatus) {
           sendLayoutStatus();
         }
+        scheduleBreakMarkerUpdate();
         if (pendingFocus && pendingFocus.field === 'summary') {
           focusSummary(pendingFocus.summaryIndex, pendingFocus.atStart);
           pendingFocus = null;
@@ -687,6 +853,7 @@
 
       totalPages = 1;
       sendLayoutStatus();
+      scheduleBreakMarkerUpdate();
       if (selectionMode) {
         applySelectionMode(true);
       }
@@ -856,6 +1023,7 @@
       if (!suppressLayoutStatus) {
         sendLayoutStatus();
       }
+      scheduleBreakMarkerUpdate();
     }
 
     function insertSummaryPageBreak(target) {
@@ -1002,23 +1170,6 @@
       });
     }
 
-    function cleanupBodyPlaceholders(recordElement) {
-      const bodyElement = getBodyElement(recordElement);
-      if (!bodyElement) {
-        return;
-      }
-      const placeholders = Array.from(bodyElement.querySelectorAll('.line-placeholder'));
-      placeholders.forEach((placeholder) => {
-        const prev = placeholder.previousSibling;
-        const next = placeholder.nextSibling;
-        const prevIsBr = prev && prev.nodeType === Node.ELEMENT_NODE && prev.nodeName === 'BR';
-        const nextIsBr = next && next.nodeType === Node.ELEMENT_NODE && next.nodeName === 'BR';
-        if (prevIsBr && nextIsBr) {
-          placeholder.remove();
-        }
-      });
-    }
-
     function trimTrailingEmptyLines(recordElement) {
       const bodyElement = getBodyElement(recordElement);
       if (!bodyElement) {
@@ -1038,11 +1189,6 @@
         }
         if (node.nodeType === Node.ELEMENT_NODE) {
           const element = node;
-          if (element.classList.contains('line-placeholder')) {
-            bodyElement.removeChild(node);
-            changed = true;
-            continue;
-          }
           if (element.nodeName === 'BR') {
             bodyElement.removeChild(node);
             changed = true;
@@ -1084,11 +1230,8 @@
       container.textContent = '';
       for (const token of tokens) {
         if (token.type === 'newline') {
-          const placeholder = document.createElement('span');
-          placeholder.className = 'line-placeholder';
-          placeholder.textContent = '\u200B';
-            container.appendChild(placeholder);
-                    continue;
+          container.appendChild(document.createElement('br'));
+          continue;
         }
         const span = document.createElement('span');
         if (token.type === 'tcy') {
@@ -1337,12 +1480,8 @@
       const range = selection.getRangeAt(0);
       range.deleteContents();
       const br = document.createElement('br');
-      const placeholder = document.createElement('span');
-      placeholder.className = 'line-placeholder';
-      placeholder.textContent = '\u200B';
-        range.insertNode(placeholder);
       range.insertNode(br);
-      range.setStartAfter(placeholder);
+      range.setStartAfter(br);
       range.collapse(true);
       selection.removeAllRanges();
       selection.addRange(range);
@@ -1358,7 +1497,6 @@
       if (!recordElement) {
         return;
       }
-      cleanupBodyPlaceholders(recordElement);
       const text = field === 'roleName'
         ? normalizeTextFromElement(target)
         : normalizeTextFromElement(getBodyElement(recordElement));
@@ -1374,6 +1512,7 @@
       if (field === 'body') {
         scheduleLayoutUpdate(recordIndex);
       }
+      scheduleBreakMarkerUpdate();
     }
 
     function renderDocument(message) {
@@ -1411,6 +1550,8 @@
       simpleMode = settings.simpleMode === true && !summaryMode;
       selectionMode = settings.selectionMode === true && !summaryMode;
       wrap.classList.toggle('simple-mode', simpleMode);
+      showBreakMarkers = settings.showBreakMarkers === true;
+      wrap.classList.toggle('break-markers', showBreakMarkers);
       const showGuides = settings.showGuides !== false;
       const fontSize = (settings.fontSizePt || 10.5) / 72 * 96;
       const lineSpacing = settings.lineSpacing || 1.0;

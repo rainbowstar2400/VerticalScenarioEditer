@@ -59,6 +59,11 @@
                           IsCheckable="True"
                           Checked="OnGuideLineToggleChanged"
                           Unchecked="OnGuideLineToggleChanged" />
+                <MenuItem x:Name="BreakMarkerToggleMenuItem"
+                          Header="改行・改ページ記号を表示"
+                          IsCheckable="True"
+                          Checked="OnBreakMarkerToggleChanged"
+                          Unchecked="OnBreakMarkerToggleChanged" />
             </MenuItem>
         </Menu>
         <StatusBar DockPanel.Dock="Bottom">

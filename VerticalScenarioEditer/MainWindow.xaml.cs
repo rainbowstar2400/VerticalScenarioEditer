@@ -52,6 +52,7 @@ public partial class MainWindow : Window
         UpdateTitle();
         UpdatePageNumberToggleState();
         UpdateGuideLineToggleState();
+        UpdateBreakMarkerToggleState();
         UpdateSelectionModeToggleState();
         UpdateSummaryModeToggleState();
         UpdateSimpleModeToggleState();
@@ -136,6 +137,7 @@ public partial class MainWindow : Window
             UpdateTitle();
             UpdatePageNumberToggleState();
             UpdateGuideLineToggleState();
+            UpdateBreakMarkerToggleState();
             UpdateSelectionModeToggleState();
             UpdateSummaryModeToggleState();
             UpdateSimpleModeToggleState();
@@ -182,6 +184,7 @@ public partial class MainWindow : Window
             UpdateTitle();
             UpdatePageNumberToggleState();
             UpdateGuideLineToggleState();
+            UpdateBreakMarkerToggleState();
             UpdateSelectionModeToggleState();
             UpdateSummaryModeToggleState();
             UpdateSimpleModeToggleState();
@@ -225,6 +228,7 @@ public partial class MainWindow : Window
         UpdateTitle();
         UpdatePageNumberToggleState();
         UpdateGuideLineToggleState();
+        UpdateBreakMarkerToggleState();
         UpdateSelectionModeToggleState();
         ResetOverflowWarningState();
         ClearSelectionRange();
@@ -635,6 +639,7 @@ public partial class MainWindow : Window
                 pageGapPx = DocumentSettings.PageGapDip,
                 pageNumberEnabled = _document.PageNumberEnabled,
                 showGuides = _document.ShowGuides,
+                showBreakMarkers = _appSettings.ShowBreakMarkers,
                 roleLabelHeightChars = _appSettings.RoleLabelHeightChars,
                 zoomScale = _appSettings.ZoomScale,
                 selectionMode = _isSelectionMode,
@@ -884,6 +889,7 @@ public partial class MainWindow : Window
         EnsureAtLeastOneRecord();
         UpdatePageNumberToggleState();
         UpdateGuideLineToggleState();
+        UpdateBreakMarkerToggleState();
         UpdateTitle();
         UpdateStatusBar();
         ResetOverflowWarningState();
@@ -968,6 +974,17 @@ public partial class MainWindow : Window
         }
         _suppressToggleEvents = true;
         GuideLineToggleMenuItem.IsChecked = _document.ShowGuides;
+        _suppressToggleEvents = false;
+    }
+
+    private void UpdateBreakMarkerToggleState()
+    {
+        if (BreakMarkerToggleMenuItem == null)
+        {
+            return;
+        }
+        _suppressToggleEvents = true;
+        BreakMarkerToggleMenuItem.IsChecked = _appSettings.ShowBreakMarkers;
         _suppressToggleEvents = false;
     }
 
@@ -1423,6 +1440,22 @@ public partial class MainWindow : Window
 
         _document.ShowGuides = GuideLineToggleMenuItem.IsChecked == true;
         MarkDirty();
+        SendDocumentToWebView();
+    }
+
+    private void OnBreakMarkerToggleChanged(object sender, RoutedEventArgs e)
+    {
+        if (BreakMarkerToggleMenuItem == null)
+        {
+            return;
+        }
+        if (_suppressToggleEvents)
+        {
+            return;
+        }
+
+        _appSettings.ShowBreakMarkers = BreakMarkerToggleMenuItem.IsChecked == true;
+        AppSettingsStore.Save(_appSettings);
         SendDocumentToWebView();
     }
 
