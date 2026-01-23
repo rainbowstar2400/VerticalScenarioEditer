@@ -108,6 +108,39 @@
     .record.selected .role {
       background-color: rgba(140, 210, 140, 0.25);
     }
+    .simple-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--record-gap);
+      width: 100%;
+    }
+    .simple-frame {
+      border: 1px solid #909090;
+      box-sizing: border-box;
+      background-color: #ffffff;
+    }
+    .simple-mode .record {
+      display: flex;
+      flex-direction: row;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .simple-mode .role,
+    .simple-mode .body {
+      writing-mode: horizontal-tb;
+      text-orientation: mixed;
+      line-height: var(--line-advance);
+      padding-top: 0;
+      min-width: auto;
+    }
+    .simple-mode .role {
+      position: static;
+      white-space: pre;
+      flex: 0 0 auto;
+    }
+    .simple-mode .body {
+      flex: 1 1 auto;
+    }
     .summary {
       writing-mode: vertical-rl;
       text-orientation: mixed;
@@ -199,6 +232,7 @@
     let summaryMode = false;
     let pdfMode = false;
     let lastInitMessage = null;
+    let simpleMode = false;
     let totalPages = 1;
     let pendingPagination = false;
     let selectionMode = false;
@@ -250,7 +284,9 @@
       return /[0-9A-Za-z]/.test(ch);
     }
 
-    function tokenizeText(text) {
+    function tokenizeText(text, options = {}) {
+      const useVerticalMap = options.useVerticalMap !== false;
+      const useTcy = options.useTcy !== false;
       const tokens = [];
       let index = 0;
       while (index < text.length) {
@@ -271,14 +307,14 @@
             run += text[index];
             index += 1;
           }
-          if (run.length >= 2) {
+          if (useTcy && run.length >= 2) {
             tokens.push({ type: 'tcy', text: run });
           } else {
-            tokens.push({ type: 'text', text: mapVerticalGlyph(run) });
+            tokens.push({ type: 'text', text: useVerticalMap ? mapVerticalGlyph(run) : run });
           }
           continue;
         }
-        tokens.push({ type: 'text', text: mapVerticalGlyph(ch) });
+        tokens.push({ type: 'text', text: useVerticalMap ? mapVerticalGlyph(ch) : ch });
         index += 1;
       }
       return tokens;
@@ -593,6 +629,67 @@
       });
     }
 
+    function renderSimpleMode(records) {
+      if (!layoutState || !pagesHost) {
+        return;
+      }
+
+      wrap.classList.add('simple-mode');
+      pagesHost.innerHTML = '';
+      recordElements = [];
+      recordPageMap = new Map();
+      overflowRecords = new Set();
+      summaryPageElements = [];
+      summaryOverflowPages = new Set();
+
+      const frame = document.createElement('div');
+      frame.className = 'simple-frame';
+      frame.style.width = `${layoutState.contentWidth}px`;
+      frame.style.paddingLeft = `${layoutState.lineAdvance}px`;
+      frame.style.paddingRight = `${layoutState.lineAdvance}px`;
+      frame.style.paddingTop = `${layoutState.lineAdvance}px`;
+      frame.style.paddingBottom = `${layoutState.lineAdvance}px`;
+
+      const list = document.createElement('div');
+      list.className = 'simple-list';
+      list.style.setProperty('--record-gap', `${layoutState.recordGap}px`);
+      frame.appendChild(list);
+      pagesHost.appendChild(frame);
+
+      records.forEach((record, recordIndex) => {
+        const recordContainer = document.createElement('div');
+        recordContainer.className = 'record';
+        recordContainer.dataset.recordIndex = `${recordIndex}`;
+
+        const role = document.createElement('div');
+        role.className = 'role';
+        role.style.width = `${layoutState.roleLabelWidth}px`;
+        role.setAttribute('contenteditable', selectionMode ? 'false' : 'true');
+        role.dataset.field = 'roleName';
+        role.dataset.recordIndex = recordContainer.dataset.recordIndex;
+        appendTokens(role, tokenizeText(record.roleName || '', { useVerticalMap: false, useTcy: false }), true);
+        applyRoleColor(role, record.roleName || '');
+
+        const body = document.createElement('div');
+        body.className = 'body';
+        body.setAttribute('contenteditable', selectionMode ? 'false' : 'true');
+        body.dataset.field = 'body';
+        body.dataset.recordIndex = recordContainer.dataset.recordIndex;
+        appendTokens(body, tokenizeText(record.body || '', { useVerticalMap: false, useTcy: false }));
+
+        recordContainer.appendChild(role);
+        recordContainer.appendChild(body);
+        list.appendChild(recordContainer);
+        recordElements.push(recordContainer);
+      });
+
+      totalPages = 1;
+      sendLayoutStatus();
+      if (selectionMode) {
+        applySelectionMode(true);
+      }
+    }
+
     function createMeasurementHost() {
       const host = document.createElement('div');
       host.style.position = 'absolute';
@@ -885,6 +982,8 @@
             currentPage = pageIndex + 1;
           }
         }
+      } else if (simpleMode) {
+        currentPage = 1;
       } else if (focusedIndex !== null && recordPageMap.has(focusedIndex)) {
         currentPage = (recordPageMap.get(focusedIndex) ?? 0) + 1;
       }
@@ -893,8 +992,8 @@
         type: 'layoutStatus',
         totalPages,
         currentPage,
-        overflowCount: summaryMode ? summaryOverflowPages.size : overflowRecords.size,
-        overflowRecords: summaryMode ? Array.from(summaryOverflowPages) : Array.from(overflowRecords),
+        overflowCount: summaryMode ? summaryOverflowPages.size : (simpleMode ? 0 : overflowRecords.size),
+        overflowRecords: summaryMode ? Array.from(summaryOverflowPages) : (simpleMode ? [] : Array.from(overflowRecords)),
         focusedRecordIndex: summaryMode ? (currentPage - 1) : focusedIndex,
       });
     }
@@ -1255,6 +1354,7 @@
       if (!pdfMode) {
         suppressLayoutStatus = false;
       }
+      wrap.classList.toggle('simple-mode', simpleMode);
       const settings = message.settings || lastSettings || {};
       lastSettings = settings;
 
@@ -1267,6 +1367,7 @@
       const pageGap = settings.pageGapPx || 24;
       const pageNumberEnabled = settings.pageNumberEnabled !== false;
       summaryMode = settings.summaryMode === true;
+      simpleMode = settings.simpleMode === true && !summaryMode;
       selectionMode = settings.selectionMode === true && !summaryMode;
       const showGuides = settings.showGuides !== false;
       const fontSize = (settings.fontSizePt || 10.5) / 72 * 96;
@@ -1275,6 +1376,7 @@
       const roleLabelHeightChars = settings.roleLabelHeightChars || 4.0;
       const displayRoleChars = Math.max(1, roleLabelHeightChars - 1);
       const roleLabelHeight = lineAdvance * displayRoleChars;
+      const roleLabelWidth = fontSize * roleLabelHeightChars;
       const recordGap = lineAdvance * 1.0;
       const contentWidth = pageWidth - marginLeft - marginRight;
       const contentHeight = pageHeight - marginTop - marginBottom;
@@ -1291,12 +1393,16 @@
         fontSize,
         lineAdvance,
         roleLabelHeight,
+        roleLabelWidth,
         fontFamily: settings.fontFamily || '"游明朝", "Yu Mincho", "MS Mincho", serif',
         pageNumberEnabled,
         pageGap,
         showGuides,
       };
 
+      if (!simpleMode) {
+        wrap.classList.remove('simple-mode');
+      }
       wrap.innerHTML = '';
       pagesHost = document.createElement('div');
       pagesHost.className = 'pages';
@@ -1310,6 +1416,11 @@
         applySelectionMode(false);
         const summaryText = doc.summaryText ?? doc.SummaryText ?? '';
         renderSummaryPages(splitSummaryText(summaryText), { editable: true });
+        return;
+      }
+
+      if (simpleMode) {
+        renderSimpleMode(doc.records || []);
         return;
       }
 

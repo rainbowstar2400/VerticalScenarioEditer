@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     private int? _selectionEndRecordIndex;
     private bool _isSelectionMode;
     private bool _isSummaryMode;
+    private bool _isSimpleMode;
     private bool _isDirty;
     private bool _suppressToggleEvents;
     private TaskCompletionSource<bool>? _pdfReadyTcs;
@@ -53,6 +54,7 @@ public partial class MainWindow : Window
         UpdateGuideLineToggleState();
         UpdateSelectionModeToggleState();
         UpdateSummaryModeToggleState();
+        UpdateSimpleModeToggleState();
         UpdateSelectionModeAvailability();
         UpdateZoomUi(_appSettings.ZoomScale);
         UpdateStatusBar();
@@ -136,6 +138,7 @@ public partial class MainWindow : Window
             UpdateGuideLineToggleState();
             UpdateSelectionModeToggleState();
             UpdateSummaryModeToggleState();
+            UpdateSimpleModeToggleState();
             UpdateSelectionModeAvailability();
             ResetOverflowWarningState();
             ClearSelectionRange();
@@ -585,7 +588,8 @@ public partial class MainWindow : Window
                 roleLabelHeightChars = _appSettings.RoleLabelHeightChars,
                 zoomScale = _appSettings.ZoomScale,
                 selectionMode = _isSelectionMode,
-                summaryMode = _isSummaryMode
+                summaryMode = _isSummaryMode,
+                simpleMode = _isSimpleMode
             }
         };
 
@@ -890,6 +894,9 @@ public partial class MainWindow : Window
         {
             PageInfoText.Text = "ページ: -";
         }
+
+        var modeLabel = _isSummaryMode ? "概要" : _isSimpleMode ? "簡易" : "本文";
+        ModeStatusText.Text = $"モード: {modeLabel}";
     }
 
     private void UpdatePageNumberToggleState()
@@ -930,6 +937,15 @@ public partial class MainWindow : Window
             return;
         }
         SummaryModeMenuItem.IsChecked = _isSummaryMode;
+    }
+
+    private void UpdateSimpleModeToggleState()
+    {
+        if (SimpleModeMenuItem == null)
+        {
+            return;
+        }
+        SimpleModeMenuItem.IsChecked = _isSimpleMode;
     }
 
     private void UpdateSelectionModeAvailability()
@@ -1463,10 +1479,28 @@ public partial class MainWindow : Window
         {
             _isSelectionMode = false;
             UpdateSelectionModeToggleState();
+            _isSimpleMode = false;
+            UpdateSimpleModeToggleState();
         }
         ClearSelectionRange();
         SendSelectionModeToWebView();
         SendDocumentToWebView();
         UpdateSelectionModeAvailability();
+    }
+
+    private void OnSimpleModeToggleChanged(object sender, RoutedEventArgs e)
+    {
+        if (SimpleModeMenuItem == null)
+        {
+            return;
+        }
+
+        _isSimpleMode = SimpleModeMenuItem.IsChecked == true;
+        if (_isSimpleMode)
+        {
+            _isSummaryMode = false;
+            UpdateSummaryModeToggleState();
+        }
+        SendDocumentToWebView();
     }
 }

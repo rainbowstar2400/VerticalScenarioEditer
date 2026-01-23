@@ -42,6 +42,11 @@
                           IsCheckable="True"
                           Checked="OnSummaryModeToggleChanged"
                           Unchecked="OnSummaryModeToggleChanged" />
+                <MenuItem x:Name="SimpleModeMenuItem"
+                          Header="簡易モード"
+                          IsCheckable="True"
+                          Checked="OnSimpleModeToggleChanged"
+                          Unchecked="OnSimpleModeToggleChanged" />
             </MenuItem>
             <MenuItem Header="_表示">
                 <MenuItem x:Name="PageNumberToggleMenuItem"
@@ -63,6 +68,10 @@
             <Separator />
             <StatusBarItem>
                 <TextBlock x:Name="PageInfoText" Text="ページ: -" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock x:Name="ModeStatusText" Text="モード: 本文" />
             </StatusBarItem>
             <Separator />
             <StatusBarItem>
