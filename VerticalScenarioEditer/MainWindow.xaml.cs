@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -18,6 +19,7 @@ namespace VerticalScenarioEditer;
 public partial class MainWindow : Window
 {
     private const string FileFilter = "縦書き脚本エディタ (*.vse)|*.vse|JSON (*.json)|*.json|すべてのファイル (*.*)|*.*";
+    private const string HelpUrl = "https://github.com/rainbowstar2400/VerticalScenarioEditer";
     private DocumentState _document = DocumentState.CreateDefault();
     private string? _currentFilePath;
     private bool _isWebContentReady;
@@ -1457,6 +1459,22 @@ public partial class MainWindow : Window
         _appSettings.ShowBreakMarkers = BreakMarkerToggleMenuItem.IsChecked == true;
         AppSettingsStore.Save(_appSettings);
         SendDocumentToWebView();
+    }
+
+    private void OnHelpOpenClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = HelpUrl,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "ヘルプを開けませんでした", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private async Task<bool> EnterPdfCombinedModeAsync()

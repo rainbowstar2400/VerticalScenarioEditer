@@ -65,6 +65,10 @@
                           Checked="OnBreakMarkerToggleChanged"
                           Unchecked="OnBreakMarkerToggleChanged" />
             </MenuItem>
+            <MenuItem Header="ヘルプ">
+                <MenuItem Header="オンラインヘルプを開く"
+                          Click="OnHelpOpenClick" />
+            </MenuItem>
         </Menu>
         <StatusBar DockPanel.Dock="Bottom">
             <StatusBarItem>
