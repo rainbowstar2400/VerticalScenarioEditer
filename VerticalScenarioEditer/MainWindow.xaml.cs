@@ -473,36 +473,59 @@ public partial class MainWindow : Window
                 record.RoleName = line.Substring(0, sceneSeparatorIndex).Trim();
                 record.Body = line.Substring(sceneSeparatorIndex + 1);
             }
-            else if (parenIndex > 0 && (openIndex < 0 || parenIndex < openIndex))
+            else
             {
-                record.RoleName = line.Substring(0, parenIndex).Trim();
-                record.Body = line.Substring(parenIndex);
-            }
-            else if (openIndex > 0 && line.EndsWith('」'))
-            {
-                record.RoleName = line.Substring(0, openIndex).Trim();
-                record.Body = line.Substring(openIndex + 1, line.Length - openIndex - 2);
-            }
-            else if (openIndex > 0)
-            {
-                var closeIndex = line.LastIndexOf('」');
-                if (closeIndex > openIndex)
+                var firstMarkerIndex = -1;
+                if (openIndex >= 0 && parenIndex >= 0)
+                {
+                    firstMarkerIndex = Math.Min(openIndex, parenIndex);
+                }
+                else if (openIndex >= 0)
+                {
+                    firstMarkerIndex = openIndex;
+                }
+                else if (parenIndex >= 0)
+                {
+                    firstMarkerIndex = parenIndex;
+                }
+
+                if (firstMarkerIndex > 0)
+                {
+                    record.RoleName = line.Substring(0, firstMarkerIndex).Trim();
+                    var bodyRaw = line.Substring(firstMarkerIndex);
+                    record.Body = bodyRaw.Replace("「", string.Empty).Replace("」", string.Empty);
+                }
+                else if (parenIndex > 0 && (openIndex < 0 || parenIndex < openIndex))
+                {
+                    record.RoleName = line.Substring(0, parenIndex).Trim();
+                    record.Body = line.Substring(parenIndex);
+                }
+                else if (openIndex > 0 && line.EndsWith('」'))
                 {
                     record.RoleName = line.Substring(0, openIndex).Trim();
-                    var mainBody = line.Substring(openIndex + 1, closeIndex - openIndex - 1);
-                    var tail = line.Substring(closeIndex + 1);
-                    record.Body = $"{mainBody}{tail}";
+                    record.Body = line.Substring(openIndex + 1, line.Length - openIndex - 2);
+                }
+                else if (openIndex > 0)
+                {
+                    var closeIndex = line.LastIndexOf('」');
+                    if (closeIndex > openIndex)
+                    {
+                        record.RoleName = line.Substring(0, openIndex).Trim();
+                        var mainBody = line.Substring(openIndex + 1, closeIndex - openIndex - 1);
+                        var tail = line.Substring(closeIndex + 1);
+                        record.Body = $"{mainBody}{tail}";
+                    }
+                    else
+                    {
+                        record.RoleName = string.Empty;
+                        record.Body = line;
+                    }
                 }
                 else
                 {
                     record.RoleName = string.Empty;
                     record.Body = line;
                 }
-            }
-            else
-            {
-                record.RoleName = string.Empty;
-                record.Body = line;
             }
 
             document.Records.Add(record);

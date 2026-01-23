@@ -419,6 +419,7 @@
       overflowRecords = new Set();
       totalPages = 1;
       const availableWidth = Math.round(layoutState.contentWidth);
+      const pageEpsilon = 1.0;
 
       let { page, content } = createPage();
       let usedWidth = 0;
@@ -431,13 +432,13 @@
         const recordWidth = Number.isFinite(storedWidth) && storedWidth > 0
           ? storedWidth
           : Math.ceil(recordElement.getBoundingClientRect().width);
-        if (recordWidth > availableWidth) {
+        if (recordWidth > availableWidth + pageEpsilon) {
           recordElement.classList.add('overflow');
           overflowRecords.add(index);
         }
 
         const gapWidth = usedWidth === 0 ? 0 : layoutState.recordGap;
-        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > availableWidth) {
+        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > availableWidth + pageEpsilon) {
           pagesHost.appendChild(page);
           pageIndex += 1;
           ({ page, content } = createPage());
@@ -757,6 +758,7 @@
       const editable = options.editable !== false;
       const startPageIndex = options.startPageIndex || 0;
       const availableWidth = Math.round(layoutState.contentWidth);
+      const pageEpsilon = 1.0;
       const measurementHost = createMeasurementHost();
       const measurePage = document.createElement('div');
       const measureContent = document.createElement('div');
@@ -795,13 +797,13 @@
         const recordWidth = Number.isFinite(storedWidth) && storedWidth > 0
           ? storedWidth
           : Math.ceil(recordElement.getBoundingClientRect().width);
-        if (recordWidth > availableWidth) {
+        if (recordWidth > availableWidth + pageEpsilon) {
           recordElement.classList.add('overflow');
           hasOverflow = true;
         }
 
         const gapWidth = usedWidth === 0 ? 0 : layoutState.recordGap;
-        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > availableWidth) {
+        if (usedWidth > 0 && usedWidth + gapWidth + recordWidth > availableWidth + pageEpsilon) {
           pageIndex += 1;
           usedWidth = 0;
           startPage();
