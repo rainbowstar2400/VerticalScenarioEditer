@@ -178,6 +178,19 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnCopyDialogueTextClick(object sender, RoutedEventArgs e)
+    {
+        var text = BuildDialogueText();
+        try
+        {
+            System.Windows.Clipboard.SetText(text);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "コピーに失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+    }
+
     private void OnRoleDictionaryClick(object sender, RoutedEventArgs e)
     {
         var window = new RoleDictionaryWindow(_document)
@@ -224,6 +237,36 @@ public partial class MainWindow : Window
             }
 
             builder.AppendLine(line);
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private string BuildDialogueText()
+    {
+        var builder = new StringBuilder();
+        var start = _selectionStartRecordIndex;
+        var end = _selectionEndRecordIndex;
+        var hasSelection = start.HasValue && end.HasValue;
+        var selectionStart = hasSelection ? Math.Min(start!.Value, end!.Value) : 0;
+        var selectionEnd = hasSelection ? Math.Max(start!.Value, end!.Value) : _document.Records.Count - 1;
+        if (selectionStart < 0 || selectionEnd >= _document.Records.Count)
+        {
+            selectionStart = 0;
+            selectionEnd = _document.Records.Count - 1;
+        }
+
+        for (var index = selectionStart; index <= selectionEnd && index < _document.Records.Count; index += 1)
+        {
+            var record = _document.Records[index];
+            var body = record.Body ?? string.Empty;
+            body = body.Replace("\r", string.Empty).Replace("\n", string.Empty);
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                continue;
+            }
+            builder.AppendLine(body);
+            builder.AppendLine();
         }
 
         return builder.ToString().TrimEnd();

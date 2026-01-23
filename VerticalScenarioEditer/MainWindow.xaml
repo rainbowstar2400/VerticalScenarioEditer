@@ -18,7 +18,10 @@
                 <MenuItem Header="テキスト書き出し..." Click="OnExportTextClick" />
             </MenuItem>
             <MenuItem Header="_編集">
-                <MenuItem Header="テキストをコピー" Click="OnCopyTextClick" />
+                <MenuItem Header="テキストをコピー">
+                    <MenuItem Header="整形してコピー" Click="OnCopyTextClick" />
+                    <MenuItem Header="セリフのみコピー" Click="OnCopyDialogueTextClick" />
+                </MenuItem>
                 <MenuItem Header="役名辞書..." Click="OnRoleDictionaryClick" />
                 <Separator />
                 <MenuItem x:Name="SelectionModeMenuItem"
