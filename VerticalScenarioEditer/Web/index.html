@@ -427,7 +427,7 @@
         }
         if (rect) {
           const x = rect.left - overlayRect.left + 14;
-          const y = rect.bottom - overlayRect.top - markerSize + 6;
+          const y = rect.bottom - overlayRect.top - markerSize + 10;
           ctx.save();
           ctx.translate(x, y);
           ctx.rotate(Math.PI / 2);
@@ -478,7 +478,7 @@
         return;
       }
       const x = rect.left - overlayRect.left + 14;
-      const y = rect.bottom - overlayRect.top - markerSize + 6;
+      const y = rect.bottom - overlayRect.top - markerSize + 10;
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(Math.PI / 2);
