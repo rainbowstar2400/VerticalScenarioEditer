@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Forms;
+using MessageBox = System.Windows.MessageBox;
 using VerticalScenarioEditer.Models;
 using VerticalScenarioEditer.ViewModels;
 
