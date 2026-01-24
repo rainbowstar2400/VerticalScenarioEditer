@@ -18,7 +18,8 @@ namespace VerticalScenarioEditer;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string FileFilter = "縦書き脚本エディタ (*.vse)|*.vse|JSON (*.json)|*.json|すべてのファイル (*.*)|*.*";
+    private const string AppDisplayName = "VerticalScenarioEditer(VSE)";
+    private const string FileFilter = "VerticalScenarioEditer(VSE) (*.vse)|*.vse|JSON (*.json)|*.json|すべてのファイル (*.*)|*.*";
     private const string HelpUrl = "https://github.com/rainbowstar2400/VerticalScenarioEditer";
     private DocumentState _document = DocumentState.CreateDefault();
     private string? _currentFilePath;
@@ -598,9 +599,9 @@ public partial class MainWindow : Window
 
     private void UpdateTitle()
     {
-        var fileLabel = string.IsNullOrWhiteSpace(_currentFilePath) ? "無題" : _currentFilePath;
+        var fileLabel = string.IsNullOrWhiteSpace(_currentFilePath) ? "無題" : Path.GetFileName(_currentFilePath);
         var dirtyMark = _isDirty ? " *" : string.Empty;
-        Title = $"縦書き脚本エディタ - {fileLabel}{dirtyMark}";
+        Title = $"{AppDisplayName} - {fileLabel}{dirtyMark}";
     }
 
     private void OnWebViewNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -642,6 +643,7 @@ public partial class MainWindow : Window
                 pageNumberEnabled = _document.PageNumberEnabled,
                 showGuides = _document.ShowGuides,
                 showBreakMarkers = _appSettings.ShowBreakMarkers,
+                documentTitle = string.IsNullOrWhiteSpace(_currentFilePath) ? "無題" : Path.GetFileNameWithoutExtension(_currentFilePath),
                 roleLabelHeightChars = _appSettings.RoleLabelHeightChars,
                 zoomScale = _appSettings.ZoomScale,
                 selectionMode = _isSelectionMode,
@@ -1153,7 +1155,10 @@ public partial class MainWindow : Window
         var dialog = new Microsoft.Win32.SaveFileDialog
         {
             Filter = "PDF (*.pdf)|*.pdf|すべてのファイル (*.*)|*.*",
-            DefaultExt = ".pdf"
+            DefaultExt = ".pdf",
+            FileName = string.IsNullOrWhiteSpace(_currentFilePath)
+                ? "無題.pdf"
+                : $"{Path.GetFileNameWithoutExtension(_currentFilePath)}.pdf"
         };
 
         if (dialog.ShowDialog(this) != true)
@@ -1161,15 +1166,25 @@ public partial class MainWindow : Window
             return;
         }
 
+        var pdfTitle = Path.GetFileNameWithoutExtension(dialog.FileName);
+        if (string.IsNullOrWhiteSpace(pdfTitle))
+        {
+            pdfTitle = "無題";
+        }
+
         try
         {
             if (!string.IsNullOrWhiteSpace(_document.SummaryText))
             {
-                if (!await EnterPdfCombinedModeAsync())
+                if (!await EnterPdfCombinedModeAsync(pdfTitle))
                 {
                     System.Windows.MessageBox.Show(this, "警告: 概要ページまたは本文に収まらない内容があるため、PDF出力を停止しました。", "PDF出力を停止しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
                     return;
                 }
+            }
+            else
+            {
+                ApplyDocumentTitleToWebView(pdfTitle);
             }
 
             var settings = EditorWebView.CoreWebView2.Environment.CreatePrintSettings();
@@ -1192,6 +1207,7 @@ public partial class MainWindow : Window
             {
                 ExitPdfCombinedMode();
             }
+            SendDocumentToWebView();
         }
     }
 
@@ -1477,7 +1493,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<bool> EnterPdfCombinedModeAsync()
+    private async Task<bool> EnterPdfCombinedModeAsync(string documentTitle)
     {
         if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
         {
@@ -1490,7 +1506,8 @@ public partial class MainWindow : Window
         var payload = new
         {
             type = "enterPdfMode",
-            summaryText = _document.SummaryText ?? string.Empty
+            summaryText = _document.SummaryText ?? string.Empty,
+            documentTitle = documentTitle
         };
 
         var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
@@ -1501,6 +1518,27 @@ public partial class MainWindow : Window
         EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
         var completed = await Task.WhenAny(_pdfReadyTcs.Task, Task.Delay(1500));
         return completed == _pdfReadyTcs.Task && _pdfReadyTcs.Task.Result;
+    }
+
+    private void ApplyDocumentTitleToWebView(string title)
+    {
+        if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            type = "applyDocumentTitle",
+            documentTitle = title
+        };
+
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+
+        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
     }
 
     private void ExitPdfCombinedMode()

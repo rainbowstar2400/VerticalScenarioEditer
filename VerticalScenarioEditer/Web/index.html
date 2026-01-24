@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>縦書き脚本エディタ</title>
+  <title>VerticalScenarioEditer(VSE)</title>
   <style>
     :root {
       --bg: #f0f0f0;
@@ -1546,6 +1546,7 @@
       const marginBottom = mmToPx(settings.marginBottomMm || 25);
       const pageGap = settings.pageGapPx || 24;
       const pageNumberEnabled = settings.pageNumberEnabled !== false;
+      const documentTitle = settings.documentTitle || '無題';
       summaryMode = settings.summaryMode === true;
       simpleMode = settings.simpleMode === true && !summaryMode;
       selectionMode = settings.selectionMode === true && !summaryMode;
@@ -1582,6 +1583,7 @@
         pageGap,
         showGuides,
       };
+      document.title = documentTitle;
 
       wrap.classList.toggle('simple-mode', simpleMode);
       wrap.innerHTML = '';
@@ -1910,9 +1912,18 @@
           applySelectionMode(message.selectionMode);
           return;
         }
+        if (message.type === 'applyDocumentTitle') {
+          if (message.documentTitle) {
+            document.title = message.documentTitle;
+          }
+          return;
+        }
         if (message.type === 'enterPdfMode') {
           pdfMode = true;
           suppressLayoutStatus = true;
+          if (message.documentTitle) {
+            document.title = message.documentTitle;
+          }
           const summaryText = message.summaryText || (currentDocument ? (currentDocument.summaryText ?? currentDocument.SummaryText ?? '') : '');
           renderCombinedPdf(summaryText, currentDocument ? currentDocument.records || [] : []);
           return;

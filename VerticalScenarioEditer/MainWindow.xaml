@@ -6,7 +6,7 @@
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
         PreviewMouseWheel="OnWindowPreviewMouseWheel"
-        Title="縦書き脚本エディタ" Height="900" Width="1200" Background="#F0F0F0">
+        Title="VerticalScenarioEditer(VSE)" Height="900" Width="1200" Background="#F0F0F0">
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_ファイル">
