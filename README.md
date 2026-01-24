@@ -4,15 +4,43 @@
 
 > 役名（1段目）と本文（2段目）を「レコード」として扱い、脚本の入力・整形・出力を一連の流れで行えます。
 
-## インストール
+## インストール / ダウンロード
 
-`Releses`から、最新のものをダウンロードしてください。
+このソフトは GitHub の `Releases` からダウンロードできます。  
+右側（または下側）にある **Assets** から、次のどちらかを選んでください。
 
-- `Setup.exe`をダウンロードして実行  
-　または
-- `portable.zip`を展開して`VerticalScenarioEditor.exe`を起動
+### 1) よく分からない場合（おすすめ）
+- **`VerticalScenarioEditor-Setup.exe`** をダウンロードして実行してください。  
+  画面の案内に従ってインストールできます。
 
-よくわからない場合は、とりあえず`Setup.exe`で大丈夫です。
+### 2) インストールせずに試したい場合
+- **`VerticalScenarioEditor-1.0.0-win-x64-portable.zip`** をダウンロードして展開し、  
+  フォルダ内の **`VerticalScenarioEditor.exe`** を起動してください。
+
+---
+
+### Windows の警告（SmartScreen）について
+
+初回起動時に、Windows から  
+「Windows によって PC が保護されました（Microsoft Defender SmartScreen）」  
+という警告が表示される場合があります。
+
+これは、現時点では **コード署名（有料の証明書）** を付けていないため、Windows が発行元を自動で確認できないことが原因です。
+
+- 表示された場合は、画面の **「詳細情報」** を押してから **「実行」** を選ぶと起動できます。
+- 不安な場合は、`checksums.txt` を使ってダウンロードしたファイルが改ざんされていないことを確認できます（手順は下記）。
+
+---
+
+### （任意）ダウンロードしたファイルの確認（checksums）
+
+`Releases` の Assets にある `checksums.txt` は、配布ファイルの「照合用の値（SHA-256）」です。  
+PowerShell で次を実行し、表示された `Hash` が `checksums.txt` の該当行と一致することを確認できます。
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\VerticalScenarioEditor-Setup.exe
+Get-FileHash -Algorithm SHA256 .\VerticalScenarioEditor-1.0.0-win-x64-portable.zip
+```
 
 ## イメージ
 - 画面イメージ
