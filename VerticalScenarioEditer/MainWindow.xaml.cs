@@ -810,19 +810,33 @@ public partial class MainWindow : Window
         switch (name)
         {
             case "insertAfter":
+            {
+                var bodyText = root.TryGetProperty("bodyText", out var bodyProperty)
+                    ? bodyProperty.GetString()
+                    : null;
                 PushUndoState();
+                var record = _document.Records[recordIndex];
+                record.Body = TrimTrailingEmptyLines(bodyText ?? record.Body);
                 _document.Records.Insert(recordIndex + 1, new ScriptRecord());
                 MarkDirty();
                 SendDocumentToWebView();
                 UpdateStatusBar();
                 break;
+            }
             case "insertBefore":
+            {
+                var bodyText = root.TryGetProperty("bodyText", out var bodyProperty)
+                    ? bodyProperty.GetString()
+                    : null;
                 PushUndoState();
+                var record = _document.Records[recordIndex];
+                record.Body = TrimTrailingEmptyLines(bodyText ?? record.Body);
                 _document.Records.Insert(recordIndex, new ScriptRecord());
                 MarkDirty();
                 SendDocumentToWebView();
                 UpdateStatusBar();
                 break;
+            }
             case "deleteRecord":
                 PushUndoState();
                 _document.Records.RemoveAt(recordIndex);
@@ -832,6 +846,25 @@ public partial class MainWindow : Window
                 UpdateStatusBar();
                 break;
         }
+    }
+
+    private static string TrimTrailingEmptyLines(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return string.Empty;
+        }
+        var lines = text.Replace("\r", "").Split('\n').ToList();
+        for (var i = lines.Count - 1; i >= 0; i--)
+        {
+            if (lines[i].Trim().Length == 0)
+            {
+                lines.RemoveAt(i);
+                continue;
+            }
+            break;
+        }
+        return string.Join("\n", lines);
     }
 
     private void EnsureAtLeastOneRecord()

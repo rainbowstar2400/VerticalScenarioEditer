@@ -219,6 +219,13 @@
     .selection-mode {
       user-select: none;
     }
+    .caret-anchor {
+      display: inline-block;
+      width: var(--line-advance);
+      height: var(--line-advance);
+      color: transparent;
+      pointer-events: auto;
+    }
   </style>
 </head>
 <body>
@@ -253,6 +260,7 @@
     let suppressLayoutStatus = false;
     let showBreakMarkers = false;
     let breakMarkerHandle = null;
+    let lastFocusedRecordIndex = null;
 
     function mmToPx(mm) {
       return mm / 25.4 * 96;
@@ -432,6 +440,52 @@
       });
     }
 
+    function getLastTextRect(element) {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          if (!node.nodeValue) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          const parent = node.parentElement;
+          if (parent && parent.classList.contains('caret-anchor') && parent.dataset.ghost === 'true') {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return node.nodeValue.length > 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        },
+      });
+      let lastText = null;
+      while (walker.nextNode()) {
+        lastText = walker.currentNode;
+      }
+      if (!lastText) {
+        return null;
+      }
+      const text = lastText.nodeValue || '';
+      const lastIndex = Math.max(0, text.length - 1);
+      const range = document.createRange();
+      range.setStart(lastText, lastIndex);
+      range.setEnd(lastText, lastIndex + 1);
+      const rects = range.getClientRects();
+      if (rects.length > 0) {
+        return rects[rects.length - 1];
+      }
+      return null;
+    }
+
+    function drawRecordEndMarker(element, ctx, overlayRect, marker, markerSize) {
+      const rect = getLastTextRect(element);
+      if (!rect) {
+        return;
+      }
+      const x = rect.left - overlayRect.left + 14;
+      const y = rect.bottom - overlayRect.top - markerSize + 6;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.PI / 2);
+      ctx.fillText(marker, 0, 0);
+      ctx.restore();
+    }
+
     function findPageLastRect(page) {
       const elements = Array.from(page.querySelectorAll('.body, .summary'));
       let best = null;
@@ -491,6 +545,9 @@
         const targets = page.querySelectorAll('.body, .summary');
         targets.forEach((element) => {
           drawLineBreakMarkers(element, ctx, overlayRect, lineMarker, markerSize);
+          if (element.classList.contains('body')) {
+            drawRecordEndMarker(element, ctx, overlayRect, lineMarker, markerSize);
+          }
         });
 
         if (pageIndex < pages.length - 1) {
@@ -839,6 +896,7 @@
         body.dataset.field = 'body';
         body.dataset.recordIndex = recordContainer.dataset.recordIndex;
         appendTokens(body, tokenizeText(record.body || '', { useVerticalMap: false, useTcy: false }));
+        syncTrailingNewline(body);
 
         recordContainer.appendChild(role);
         recordContainer.appendChild(body);
@@ -891,6 +949,7 @@
         body.dataset.field = 'body';
         body.dataset.recordIndex = recordContainer.dataset.recordIndex;
         appendTokens(body, bodyTokens);
+        syncTrailingNewline(body);
 
         const role = document.createElement('div');
         role.className = 'role';
@@ -1175,7 +1234,8 @@
         const node = bodyElement.lastChild;
         if (node.nodeType === Node.TEXT_NODE) {
           const text = node.nodeValue || '';
-          if (text.trim().length === 0) {
+          const normalized = normalizeText(text);
+          if (normalized.trim().length === 0) {
             bodyElement.removeChild(node);
             changed = true;
             continue;
@@ -1184,6 +1244,11 @@
         }
         if (node.nodeType === Node.ELEMENT_NODE) {
           const element = node;
+          if (element.classList.contains('caret-anchor')) {
+            bodyElement.removeChild(node);
+            changed = true;
+            continue;
+          }
           if (element.nodeName === 'BR') {
             bodyElement.removeChild(node);
             changed = true;
@@ -1192,7 +1257,52 @@
         }
         break;
       }
+      syncTrailingNewline(bodyElement);
       return changed;
+    }
+
+    function normalizeCaretAnchors(bodyElement) {
+      if (!bodyElement) {
+        return;
+      }
+      const anchors = Array.from(bodyElement.querySelectorAll('.caret-anchor'));
+      anchors.forEach((anchor) => {
+        if (anchor.dataset.ghost !== 'true') {
+          return;
+        }
+        if (anchor.textContent !== '\u00A0') {
+          anchor.dataset.ghost = '';
+          anchor.classList.remove('caret-anchor');
+        }
+      });
+    }
+
+    function syncTrailingNewline(bodyElement) {
+      if (!bodyElement) {
+        return;
+      }
+      normalizeCaretAnchors(bodyElement);
+      const text = normalizeTextFromElement(bodyElement);
+      const anchors = Array.from(bodyElement.querySelectorAll('.caret-anchor[data-ghost="true"]'));
+      const shouldHaveAnchor = text.endsWith('\n');
+      if (!shouldHaveAnchor) {
+        anchors.forEach((anchor) => anchor.remove());
+        return;
+      }
+      const lastAnchor = anchors[anchors.length - 1];
+      anchors.slice(0, -1).forEach((anchor) => anchor.remove());
+      if (!lastAnchor) {
+        const anchor = document.createElement('span');
+        anchor.className = 'caret-anchor';
+        anchor.dataset.ghost = 'true';
+        anchor.setAttribute('aria-hidden', 'true');
+        anchor.textContent = '\u00A0';
+        bodyElement.appendChild(anchor);
+        return;
+      }
+      if (lastAnchor.parentElement !== bodyElement || lastAnchor.nextSibling) {
+        bodyElement.appendChild(lastAnchor);
+      }
     }
 
     function normalizeBodyAfterBlur(recordElement) {
@@ -1206,6 +1316,7 @@
         return false;
       }
       appendTokens(bodyElement, tokenizeText(trimmed));
+      syncTrailingNewline(bodyElement);
       postMessage({
         type: 'inputPatch',
         recordIndex: Number(recordElement.dataset.recordIndex),
@@ -1214,6 +1325,42 @@
       });
       scheduleLayoutUpdate(Number(recordElement.dataset.recordIndex));
       return true;
+    }
+
+    function normalizeBodyOnRecordLeave(recordElement) {
+      const bodyElement = getBodyElement(recordElement);
+      if (!bodyElement) {
+        return;
+      }
+      const raw = normalizeTextFromElement(bodyElement);
+      const trimmed = raw.replace(/\n+$/g, '');
+      if (trimmed === raw) {
+        return;
+      }
+      appendTokens(bodyElement, tokenizeText(trimmed));
+      syncTrailingNewline(bodyElement);
+      postMessage({
+        type: 'inputPatch',
+        recordIndex: Number(recordElement.dataset.recordIndex),
+        field: 'body',
+        text: trimmed,
+      });
+      updateRecordWidth(recordElement);
+      if (isEditingActive()) {
+        pendingPagination = true;
+      } else {
+        paginateRecords();
+      }
+    }
+
+    function getTrimmedBodyText(recordElement) {
+      const bodyElement = getBodyElement(recordElement);
+      if (!bodyElement) {
+        return null;
+      }
+      const raw = normalizeTextFromElement(bodyElement);
+      const trimmed = raw.replace(/\n+$/g, '');
+      return trimmed;
     }
 
     function isEditingActive() {
@@ -1355,6 +1502,9 @@
           return;
         }
         const tag = current.tagName;
+        if (current.classList && current.classList.contains('caret-anchor') && current.dataset.ghost === 'true') {
+          return;
+        }
         if (tag === 'BR') {
           appendLineBreak();
           return;
@@ -1395,6 +1545,28 @@
       return recordElement?.querySelector('.body[data-field="body"]') || null;
     }
 
+    function handleRecordFocusIn(event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const field = target.dataset.field;
+      if (!field || field === 'summary') {
+        return;
+      }
+      const recordIndex = Number(target.dataset.recordIndex);
+      if (Number.isNaN(recordIndex)) {
+        return;
+      }
+      if (lastFocusedRecordIndex !== null && lastFocusedRecordIndex !== recordIndex) {
+        const previous = getRecordElement(lastFocusedRecordIndex);
+        if (previous) {
+          normalizeBodyOnRecordLeave(previous);
+        }
+      }
+      lastFocusedRecordIndex = recordIndex;
+    }
+
     function getTextAndCaret(element) {
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0) {
@@ -1422,10 +1594,20 @@
       if (!element) {
         return;
       }
+      if (element.isContentEditable && element.childNodes.length === 0) {
+        const placeholder = document.createTextNode('\u200B');
+        element.appendChild(placeholder);
+      }
       element.focus();
       const range = document.createRange();
       range.selectNodeContents(element);
-      range.collapse(atStart);
+      if (atStart && element.firstChild && element.firstChild.nodeType === Node.TEXT_NODE) {
+        const length = element.firstChild.textContent ? element.firstChild.textContent.length : 0;
+        range.setStart(element.firstChild, length);
+        range.collapse(true);
+      } else {
+        range.collapse(atStart);
+      }
       const selection = window.getSelection();
       if (selection) {
         selection.removeAllRanges();
@@ -1470,13 +1652,62 @@
     function insertLineBreakAtSelection() {
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0) {
-        return;
+        return null;
       }
       const range = selection.getRangeAt(0);
       range.deleteContents();
       const br = document.createElement('br');
       range.insertNode(br);
       range.setStartAfter(br);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return br;
+    }
+
+    function ensureCaretPlaceholderAfter(br) {
+      if (!br || !br.parentNode) {
+        return;
+      }
+      const next = br.nextSibling;
+      if (next && next.nodeType === Node.TEXT_NODE && next.nodeValue && next.nodeValue.length > 0) {
+        return;
+      }
+      if (next && next.nodeType === Node.ELEMENT_NODE && next.nodeName !== 'BR') {
+        return;
+      }
+      const textNode = document.createTextNode('\u200B');
+      br.parentNode.insertBefore(textNode, next);
+      const selection = window.getSelection();
+      if (!selection) {
+        return;
+      }
+      const range = document.createRange();
+      range.setStart(textNode, textNode.nodeValue ? textNode.nodeValue.length : 0);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    function insertCaretAnchorAtSelection() {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        return;
+      }
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      const anchor = document.createElement('span');
+      anchor.className = 'caret-anchor';
+      anchor.dataset.ghost = 'true';
+      anchor.setAttribute('aria-hidden', 'true');
+      anchor.textContent = '\u00A0';
+      range.insertNode(anchor);
+      const textNode = anchor.firstChild;
+      if (textNode) {
+        range.setStart(textNode, textNode.textContent ? textNode.textContent.length : 0);
+      } else {
+        range.setStartAfter(anchor);
+      }
       range.collapse(true);
       selection.removeAllRanges();
       selection.addRange(range);
@@ -1526,6 +1757,7 @@
         }));
       }
       currentDocument = doc;
+      lastFocusedRecordIndex = null;
       lastInitMessage = message;
       if (!pdfMode) {
         suppressLayoutStatus = false;
@@ -1627,6 +1859,10 @@
         body.dataset.field = 'body';
         body.dataset.recordIndex = recordContainer.dataset.recordIndex;
         appendTokens(body, bodyTokens);
+        if (body.childNodes.length === 0) {
+          body.appendChild(document.createTextNode('\u200B'));
+        }
+        syncTrailingNewline(body);
 
         const role = document.createElement('div');
         role.className = 'role';
@@ -1668,7 +1904,13 @@
         syncSummaryInput();
         return;
       }
+      if (target.dataset.field === 'body') {
+        normalizeCaretAnchors(target);
+      }
       syncInputForElement(target);
+      if (target.dataset.field === 'body') {
+        syncTrailingNewline(target);
+      }
     }
 
     function handleKeyDown(event) {
@@ -1734,8 +1976,14 @@
           postMessage({ type: 'command', name: 'insertBefore', recordIndex: 0 });
           return;
         }
+        normalizeBodyOnRecordLeave(recordElement);
         pendingFocus = { recordIndex, field: 'roleName', atStart: true };
-        postMessage({ type: 'command', name: 'insertBefore', recordIndex });
+        postMessage({
+          type: 'command',
+          name: 'insertBefore',
+          recordIndex,
+          bodyText: getTrimmedBodyText(recordElement),
+        });
         return;
       }
 
@@ -1801,9 +2049,15 @@
       if (event.key === 'Enter' && field === 'roleName') {
         event.preventDefault();
         if (event.ctrlKey) {
+          normalizeBodyOnRecordLeave(recordElement);
           const nextIndex = recordIndex + 1;
           pendingFocus = { recordIndex: nextIndex, field: 'roleName', atStart: true };
-          postMessage({ type: 'command', name: 'insertAfter', recordIndex });
+          postMessage({
+            type: 'command',
+            name: 'insertAfter',
+            recordIndex,
+            bodyText: getTrimmedBodyText(recordElement),
+          });
           return;
         }
         focusElement(bodyElement);
@@ -1813,22 +2067,43 @@
       if (event.key === 'Enter' && field === 'body') {
         event.preventDefault();
         if (event.ctrlKey) {
+          normalizeBodyOnRecordLeave(recordElement);
           const nextIndex = recordIndex + 1;
           pendingFocus = { recordIndex: nextIndex, field: 'roleName', atStart: true };
-          postMessage({ type: 'command', name: 'insertAfter', recordIndex });
+          postMessage({
+            type: 'command',
+            name: 'insertAfter',
+            recordIndex,
+            bodyText: getTrimmedBodyText(recordElement),
+          });
           return;
         }
+        const caretInfo = getTextAndCaret(target);
+        const atEnd = caretInfo.caret === caretInfo.text.length;
         if (!event.shiftKey && isCurrentLineEmpty(target)) {
           const nextIndex = recordIndex + 1;
           if (currentDocument && currentDocument.records && nextIndex < currentDocument.records.length) {
+            normalizeBodyOnRecordLeave(recordElement);
             focusRecord(nextIndex, 'body', true);
           } else {
+            normalizeBodyOnRecordLeave(recordElement);
             pendingFocus = { recordIndex: nextIndex, field: 'body', atStart: true };
-            postMessage({ type: 'command', name: 'insertAfter', recordIndex });
+            postMessage({
+              type: 'command',
+              name: 'insertAfter',
+              recordIndex,
+              bodyText: getTrimmedBodyText(recordElement),
+            });
           }
           return;
         }
-        insertLineBreakAtSelection();
+        const br = insertLineBreakAtSelection();
+        if (atEnd) {
+          insertCaretAnchorAtSelection();
+        } else {
+          ensureCaretPlaceholderAfter(br);
+        }
+        syncTrailingNewline(bodyElement);
         syncInputForElement(target);
         return;
       }
@@ -1853,19 +2128,12 @@
       wrap.addEventListener('mousedown', handleSelectionModeMouseBlock, true);
       wrap.addEventListener('dragstart', handleSelectionModeMouseBlock, true);
       wrap.addEventListener('selectstart', handleSelectionModeMouseBlock, true);
+      wrap.addEventListener('focusin', handleRecordFocusIn, true);
       document.addEventListener('selectionchange', () => {
         scheduleSelectionUpdate();
       });
       wrap.addEventListener('focusin', () => {
         sendLayoutStatus();
-      }, true);
-      wrap.addEventListener('focusout', () => {
-        setTimeout(() => {
-          if (pendingPagination && !isEditingActive()) {
-            pendingPagination = false;
-            paginateRecords();
-          }
-        }, 0);
       }, true);
       wrap.addEventListener('focusout', (event) => {
         const target = event.target;
@@ -1880,13 +2148,22 @@
           return;
         }
         const related = event.relatedTarget;
-        if (related instanceof Node && recordElement.contains(related)) {
+        if (!(related instanceof Node)) {
           return;
         }
-        if (trimTrailingEmptyLines(recordElement)) {
-          syncInputForElement(target);
+        const relatedRecord = related.closest('.record');
+        if (!relatedRecord || relatedRecord === recordElement) {
+          return;
         }
-        normalizeBodyAfterBlur(recordElement);
+        normalizeBodyOnRecordLeave(recordElement);
+      }, true);
+      wrap.addEventListener('focusout', () => {
+        setTimeout(() => {
+          if (pendingPagination && !isEditingActive()) {
+            pendingPagination = false;
+            paginateRecords();
+          }
+        }, 0);
       }, true);
       window.addEventListener('wheel', (event) => {
         if (!event.ctrlKey) {
