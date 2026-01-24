@@ -4,9 +4,9 @@ using System.Globalization;
 using System.Text;
 using System.Windows;
 using System.Windows.Media;
-using VerticalScenarioEditer.Models;
+using VerticalScenarioEditor.Models;
 
-namespace VerticalScenarioEditer.Controls;
+namespace VerticalScenarioEditor.Controls;
 
 public sealed class VerticalDocumentView : FrameworkElement
 {
@@ -233,3 +233,4 @@ public sealed class VerticalDocumentView : FrameworkElement
 
     private sealed record RecordLayout(ScriptRecord Record, List<string> BodyColumns, int ColumnStart, int RecordColumns, bool Overflow);
 }
+

@@ -1,9 +1,9 @@
 using System;
 using System.IO;
 using System.Text.Json;
-using VerticalScenarioEditer.Models;
+using VerticalScenarioEditor.Models;
 
-namespace VerticalScenarioEditer.Serialization;
+namespace VerticalScenarioEditor.Serialization;
 
 public static class DocumentFileService
 {
@@ -42,3 +42,4 @@ public static class DocumentFileService
         File.WriteAllText(path, json);
     }
 }
+

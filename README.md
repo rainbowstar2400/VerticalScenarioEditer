@@ -1,8 +1,18 @@
-# VerticalScenarioEditer (VSE)
+# VerticalScenarioEditor (VSE)
 
 日本語の**縦書き脚本**（役名＋セリフ/ト書き）を、**縦書き2段組の見たまま**編集し、そのまま**PDF出力**できる Windows 向けエディタです。
 
 > 役名（1段目）と本文（2段目）を「レコード」として扱い、脚本の入力・整形・出力を一連の流れで行えます。
+
+## インストール
+
+`Releses`から、最新のものをダウンロードしてください。
+
+- `Setup.exe`をダウンロードして実行  
+　または
+- `portable.zip`を展開して`VerticalScenarioEditer.exe`を起動
+
+よくわからない場合は、とりあえず`Setup.exe`で大丈夫です。
 
 ## イメージ
 - 画面イメージ

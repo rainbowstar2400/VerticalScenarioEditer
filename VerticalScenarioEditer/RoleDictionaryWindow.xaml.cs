@@ -5,10 +5,10 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Forms;
 using MessageBox = System.Windows.MessageBox;
-using VerticalScenarioEditer.Models;
-using VerticalScenarioEditer.ViewModels;
+using VerticalScenarioEditor.Models;
+using VerticalScenarioEditor.ViewModels;
 
-namespace VerticalScenarioEditer;
+namespace VerticalScenarioEditor;
 
 public partial class RoleDictionaryWindow : Window
 {
@@ -265,3 +265,4 @@ public partial class RoleDictionaryWindow : Window
         return true;
     }
 }
+

@@ -3,7 +3,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Media;
 
-namespace VerticalScenarioEditer;
+namespace VerticalScenarioEditor;
 
 public static class DocumentSettings
 {
@@ -53,3 +53,4 @@ public static class DocumentSettings
         return preferred ?? new System.Windows.Media.FontFamily("MS Mincho");
     }
 }
+

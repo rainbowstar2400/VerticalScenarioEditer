@@ -1,8 +1,8 @@
-﻿using System.Configuration;
+using System.Configuration;
 using System.Data;
 using System.Windows;
 
-namespace VerticalScenarioEditer;
+namespace VerticalScenarioEditor;
 
 /// <summary>
 /// Interaction logic for App.xaml
@@ -10,4 +10,5 @@ namespace VerticalScenarioEditer;
 public partial class App : System.Windows.Application
 {
 }
+
 

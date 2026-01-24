@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Windows;
-using VerticalScenarioEditer.Settings;
+using VerticalScenarioEditor.Settings;
 
-namespace VerticalScenarioEditer;
+namespace VerticalScenarioEditor;
 
 public partial class SettingsWindow : Window
 {
@@ -37,3 +37,4 @@ public partial class SettingsWindow : Window
         DialogResult = false;
     }
 }
+

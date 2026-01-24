@@ -1,4 +1,4 @@
-<Window x:Class="VerticalScenarioEditer.RoleDictionaryWindow"
+<Window x:Class="VerticalScenarioEditor.RoleDictionaryWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="役名辞書"
@@ -61,3 +61,4 @@
         </DataGrid>
     </DockPanel>
 </Window>
+

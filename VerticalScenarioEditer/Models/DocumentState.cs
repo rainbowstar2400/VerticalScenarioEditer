@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace VerticalScenarioEditer.Models;
+namespace VerticalScenarioEditor.Models;
 
 public sealed class DocumentState
 {
@@ -22,3 +22,4 @@ public sealed class DocumentState
         };
     }
 }
+

@@ -1,4 +1,4 @@
-namespace VerticalScenarioEditer.Settings;
+namespace VerticalScenarioEditor.Settings;
 
 public sealed class AppSettings
 {
@@ -6,3 +6,4 @@ public sealed class AppSettings
     public double RoleLabelHeightChars { get; set; } = 4.0;
     public bool ShowBreakMarkers { get; set; } = false;
 }
+

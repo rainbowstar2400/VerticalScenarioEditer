@@ -8,20 +8,20 @@ using System.Windows.Input;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
-using VerticalScenarioEditer.Models;
-using VerticalScenarioEditer.Serialization;
-using VerticalScenarioEditer.Settings;
+using VerticalScenarioEditor.Models;
+using VerticalScenarioEditor.Serialization;
+using VerticalScenarioEditor.Settings;
 
-namespace VerticalScenarioEditer;
+namespace VerticalScenarioEditor;
 
 /// <summary>
 /// Interaction logic for MainWindow.xaml
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string AppDisplayName = "VerticalScenarioEditer(VSE)";
-    private const string FileFilter = "VerticalScenarioEditer(VSE) (*.vse)|*.vse|JSON (*.json)|*.json|すべてのファイル (*.*)|*.*";
-    private const string HelpUrl = "https://github.com/rainbowstar2400/VerticalScenarioEditer";
+    private const string AppDisplayName = "VerticalScenarioEditor(VSE)";
+    private const string FileFilter = "VerticalScenarioEditor(VSE) (*.vse)|*.vse|JSON (*.json)|*.json|すべてのファイル (*.*)|*.*";
+    private const string HelpUrl = "https://github.com/rainbowstar2400/VerticalScenarioEditor";
     private DocumentState _document = DocumentState.CreateDefault();
     private string? _currentFilePath;
     private bool _isWebContentReady;
@@ -1694,3 +1694,4 @@ public partial class MainWindow : Window
         SendDocumentToWebView();
     }
 }
+

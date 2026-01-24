@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
-using VerticalScenarioEditer.Models;
+using VerticalScenarioEditor.Models;
 
-namespace VerticalScenarioEditer.Serialization;
+namespace VerticalScenarioEditor.Serialization;
 
 public sealed class DocumentFile
 {
@@ -13,3 +13,4 @@ public sealed class DocumentFile
     [JsonPropertyName("document")]
     public DocumentState Document { get; set; } = DocumentState.CreateDefault();
 }
+

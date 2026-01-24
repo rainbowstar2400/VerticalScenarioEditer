@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 
-namespace VerticalScenarioEditer.Settings;
+namespace VerticalScenarioEditor.Settings;
 
 public static class AppSettingsStore
 {
@@ -52,6 +52,7 @@ public static class AppSettingsStore
     private static string GetSettingsPath()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return Path.Combine(appData, "VerticalScenarioEditer", FileName);
+        return Path.Combine(appData, "VerticalScenarioEditor", FileName);
     }
 }
+
