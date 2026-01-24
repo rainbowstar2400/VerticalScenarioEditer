@@ -10,6 +10,8 @@ OutputBaseFilename=VerticalScenarioEditer-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+[Languages]
+Name: "ja"; MessagesFile: "compiler:Languages\Japanese.isl"
 
 [Files]
 Source: "..\publish\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
