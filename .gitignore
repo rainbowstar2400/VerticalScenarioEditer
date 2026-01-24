@@ -1,6 +1,6 @@
-VerticalScenarioEditer/bin
-VerticalScenarioEditer/obj
-VerticalScenarioEditer.Tests
+VerticalScenarioEditor/bin
+VerticalScenarioEditor/obj
+VerticalScenarioEditor.Tests
 publish
 _dist
 Installer

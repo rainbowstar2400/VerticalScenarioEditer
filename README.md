@@ -10,7 +10,7 @@
 
 - `Setup.exe`をダウンロードして実行  
 　または
-- `portable.zip`を展開して`VerticalScenarioEditer.exe`を起動
+- `portable.zip`を展開して`VerticalScenarioEditor.exe`を起動
 
 よくわからない場合は、とりあえず`Setup.exe`で大丈夫です。
 
