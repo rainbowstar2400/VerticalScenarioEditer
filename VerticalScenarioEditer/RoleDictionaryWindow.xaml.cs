@@ -15,16 +15,11 @@ public partial class RoleDictionaryWindow : Window
     public ObservableCollection<RoleColorEntry> Entries { get; } = new();
     public IReadOnlyList<string> ColorPresets { get; } = new[]
     {
-        "黄色 (#FFFF99)",
-        "橙 (#F2994A)",
-        "赤 (#EB5757)",
-        "紫 (#BB6BD9)",
-        "青 (#2F80ED)",
-        "水色 (#56CCF2)",
-        "緑 (#6FCF97)",
-        "深緑 (#219653)",
-        "濃紫 (#9B51E0)",
-        "黒 (#333333)",
+        "黄 (#FFFF99)",
+        "青 (#DEEAF6)",
+        "緑 (#E2EFD9)",
+        "桃 (#FFE1E1)",
+        "橙 (#FBE4D5)",
     };
 
     public RoleDictionaryWindow(DocumentState document)
