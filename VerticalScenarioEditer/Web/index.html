@@ -1805,6 +1805,12 @@
 
       if (event.key === 'Enter' && field === 'roleName') {
         event.preventDefault();
+        if (event.ctrlKey) {
+          const nextIndex = recordIndex + 1;
+          pendingFocus = { recordIndex: nextIndex, field: 'roleName', atStart: true };
+          postMessage({ type: 'command', name: 'insertAfter', recordIndex });
+          return;
+        }
         focusElement(bodyElement);
         return;
       }
