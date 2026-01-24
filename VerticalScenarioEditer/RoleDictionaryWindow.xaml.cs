@@ -93,6 +93,45 @@ public partial class RoleDictionaryWindow : Window
 
     private void OnRefreshClick(object sender, RoutedEventArgs e)
     {
+        var usedRoles = _document.Records
+            .SelectMany(record => ExtractRoleNames(record.RoleName))
+            .ToHashSet();
+
+        var unusedRoles = new List<string>();
+        foreach (var entry in _document.RoleDictionary)
+        {
+            var roles = ExtractRoleNames(entry.Key).ToArray();
+            if (roles.Length == 0)
+            {
+                continue;
+            }
+
+            if (!roles.Any(role => usedRoles.Contains(role)))
+            {
+                unusedRoles.Add(entry.Key);
+            }
+        }
+
+        if (unusedRoles.Count > 0)
+        {
+            var message = "次の役名は現在使われていません。削除しますか？\n" +
+                string.Join("\n", unusedRoles.Select(role => $"・{role}"));
+            var result = MessageBox.Show(
+                this,
+                message,
+                "役名辞書の更新",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                foreach (var role in unusedRoles)
+                {
+                    _document.RoleDictionary.Remove(role);
+                }
+            }
+        }
+
         RefreshEntries();
     }
 
