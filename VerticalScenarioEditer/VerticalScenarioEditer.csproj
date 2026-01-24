@@ -7,6 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>..\icons\VSE_icon_256.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
