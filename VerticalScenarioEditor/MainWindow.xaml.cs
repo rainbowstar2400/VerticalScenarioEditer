@@ -79,7 +79,23 @@ public partial class MainWindow : Window
     {
         try
         {
-            await EditorWebView.EnsureCoreWebView2Async();
+            var primaryUserDataRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "VerticalScenarioEditor",
+                "WebView2");
+            var fallbackUserDataRoot = Path.Combine(
+                Path.GetTempPath(),
+                "VerticalScenarioEditor",
+                "WebView2");
+
+            var lastAccessDenied = await TryInitializeWebViewAsync(primaryUserDataRoot)
+                ? null
+                : await TryInitializeWebViewAsync(fallbackUserDataRoot) ? null : _lastWebViewInitError;
+
+            if (lastAccessDenied != null)
+            {
+                throw lastAccessDenied;
+            }
         }
         catch (WebView2RuntimeNotFoundException)
         {
@@ -93,7 +109,10 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show(this, ex.Message, "WebView2 の初期化に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            var detail = ex.HResult == unchecked((int)0x80070005)
+                ? "アクセス権の問題が発生しました。アプリを一度終了し、ユーザーデータフォルダを削除してから再起動してください。"
+                : ex.Message;
+            System.Windows.MessageBox.Show(this, detail, "WebView2 の初期化に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             return;
         }
 
@@ -115,6 +134,24 @@ public partial class MainWindow : Window
             webRoot,
             CoreWebView2HostResourceAccessKind.Allow);
         EditorWebView.Source = new Uri("https://app/index.html");
+    }
+
+    private Exception? _lastWebViewInitError;
+
+    private async Task<bool> TryInitializeWebViewAsync(string userDataRoot)
+    {
+        try
+        {
+            Directory.CreateDirectory(userDataRoot);
+            var environment = await CoreWebView2Environment.CreateAsync(null, userDataRoot);
+            await EditorWebView.EnsureCoreWebView2Async(environment);
+            return true;
+        }
+        catch (Exception ex) when (ex.HResult == unchecked((int)0x80070005))
+        {
+            _lastWebViewInitError = ex;
+            return false;
+        }
     }
 
     private void OnFileOpenClick(object sender, RoutedEventArgs e)
