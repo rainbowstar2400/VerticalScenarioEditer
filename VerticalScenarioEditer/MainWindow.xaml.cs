@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
@@ -50,6 +51,8 @@ public partial class MainWindow : Window
     {
         _appSettings = AppSettingsStore.Load();
         InitializeComponent();
+        CommandBindings.Add(new CommandBinding(ApplicationCommands.Save, OnSaveCommandExecuted));
+        InputBindings.Add(new KeyBinding(ApplicationCommands.Save, new KeyGesture(Key.S, ModifierKeys.Control)));
         _isUiReady = true;
         EnsureAtLeastOneRecord();
         UpdateTitle();
@@ -247,6 +250,16 @@ public partial class MainWindow : Window
     }
 
     private void OnFileSaveClick(object sender, RoutedEventArgs e)
+    {
+        SaveCurrentDocument();
+    }
+
+    private void OnSaveCommandExecuted(object sender, ExecutedRoutedEventArgs e)
+    {
+        SaveCurrentDocument();
+    }
+
+    private void SaveCurrentDocument()
     {
         if (string.IsNullOrWhiteSpace(_currentFilePath))
         {
@@ -794,6 +807,11 @@ public partial class MainWindow : Window
         if (name == "redo")
         {
             Redo();
+            return;
+        }
+        if (name == "save")
+        {
+            SaveCurrentDocument();
             return;
         }
 

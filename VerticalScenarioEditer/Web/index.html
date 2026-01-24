@@ -1930,6 +1930,11 @@
           postMessage({ type: 'command', name: 'redo' });
           return;
         }
+        if (key === 's' && !event.shiftKey) {
+          event.preventDefault();
+          postMessage({ type: 'command', name: 'save' });
+          return;
+        }
       }
       const field = target.dataset.field;
       if (!field) {

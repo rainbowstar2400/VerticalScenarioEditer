@@ -13,7 +13,7 @@
                 <MenuItem Header="新規作成" Click="OnFileNewClick" />
                 <MenuItem Header="開く（.vse）..." Click="OnFileOpenClick" />
                 <MenuItem Header="整形済みテキストから読み込み..." Click="OnImportFormattedTextClick" />
-                <MenuItem Header="上書き保存" Click="OnFileSaveClick" />
+                <MenuItem Header="上書き保存" InputGestureText="Ctrl+S" Click="OnFileSaveClick" />
                 <MenuItem Header="名前をつけて保存..." Click="OnFileSaveAsClick" />
                 <Separator />
                 <MenuItem Header="PDF出力..." Click="OnExportPdfClick" />
