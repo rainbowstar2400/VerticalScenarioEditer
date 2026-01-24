@@ -300,7 +300,6 @@
 
     function tokenizeText(text, options = {}) {
       const useVerticalMap = options.useVerticalMap !== false;
-      const useTcy = options.useTcy !== false;
       const tokens = [];
       let index = 0;
       while (index < text.length) {
@@ -321,11 +320,7 @@
             run += text[index];
             index += 1;
           }
-          if (useTcy && run.length >= 2) {
-            tokens.push({ type: 'tcy', text: run });
-          } else {
-            tokens.push({ type: 'text', text: useVerticalMap ? mapVerticalGlyph(run) : run });
-          }
+          tokens.push({ type: 'text', text: useVerticalMap ? mapVerticalGlyph(run) : run });
           continue;
         }
         tokens.push({ type: 'text', text: useVerticalMap ? mapVerticalGlyph(ch) : ch });
