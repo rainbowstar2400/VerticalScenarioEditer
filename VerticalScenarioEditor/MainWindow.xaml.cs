@@ -173,7 +173,8 @@ public partial class MainWindow : Window
 
         try
         {
-            _document = DocumentFileService.Load(dialog.FileName);
+            var loadedDocument = DocumentFileService.Load(dialog.FileName);
+            _document = loadedDocument;
             _currentFilePath = dialog.FileName;
             _isDirty = false;
             EnsureAtLeastOneRecord();
@@ -189,13 +190,12 @@ public partial class MainWindow : Window
             ClearSelectionRange();
             ClearHistory();
             UpdateStatusBar();
+            SendDocumentToWebView();
         }
         catch (Exception ex)
         {
             System.Windows.MessageBox.Show(this, ex.Message, "読み込みに失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
         }
-
-        SendDocumentToWebView();
     }
 
     private void OnImportFormattedTextClick(object sender, RoutedEventArgs e)
@@ -924,6 +924,22 @@ public partial class MainWindow : Window
 
     private void EnsureAtLeastOneRecord()
     {
+        _document.Records ??= new System.Collections.Generic.List<ScriptRecord>();
+        _document.RoleDictionary ??= new System.Collections.Generic.Dictionary<string, string>();
+        _document.SummaryText ??= string.Empty;
+
+        for (var index = 0; index < _document.Records.Count; index += 1)
+        {
+            if (_document.Records[index] == null)
+            {
+                _document.Records[index] = new ScriptRecord();
+                continue;
+            }
+
+            _document.Records[index].RoleName ??= string.Empty;
+            _document.Records[index].Body ??= string.Empty;
+        }
+
         if (_document.Records.Count == 0)
         {
             _document.Records.Add(new ScriptRecord());

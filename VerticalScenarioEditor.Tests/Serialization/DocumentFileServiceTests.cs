@@ -74,6 +74,66 @@ public sealed class DocumentFileServiceTests : IDisposable
         Assert.NotNull(loaded.RoleDictionary);
     }
 
+    [Fact]
+    public void Load_WhenStructureInvalid_ShouldThrowJapaneseError()
+    {
+        var path = Path.Combine(_tempDirectory, "invalid-structure.vse");
+        File.WriteAllText(path, "{");
+
+        var exception = Assert.Throws<InvalidDataException>(() => DocumentFileService.Load(path));
+
+        Assert.Contains("ファイルの内容が不正です。", exception.Message);
+    }
+
+    [Fact]
+    public void Load_WhenVersionUnsupported_ShouldThrowJapaneseError()
+    {
+        var path = Path.Combine(_tempDirectory, "unsupported-version.vse");
+        var json = """
+                   {
+                     "version": 999,
+                     "document": {}
+                   }
+                   """;
+        File.WriteAllText(path, json);
+
+        var exception = Assert.Throws<InvalidDataException>(() => DocumentFileService.Load(path));
+
+        Assert.Contains("このファイルのバージョンには対応していません。", exception.Message);
+    }
+
+    [Fact]
+    public void Load_WhenDocumentHasNullMembers_ShouldNormalizeValues()
+    {
+        var path = Path.Combine(_tempDirectory, "normalize.vse");
+        var json = """
+                   {
+                     "version": 1,
+                     "document": {
+                       "summaryText": null,
+                       "records": [null, { "roleName": null, "body": null }],
+                       "roleDictionary": {
+                         "太郎": null,
+                         "": "#ff0000"
+                       }
+                     }
+                   }
+                   """;
+        File.WriteAllText(path, json);
+
+        var loaded = DocumentFileService.Load(path);
+
+        Assert.Equal(string.Empty, loaded.SummaryText);
+        Assert.Equal(2, loaded.Records.Count);
+        Assert.All(loaded.Records, record => Assert.NotNull(record));
+        Assert.Equal(string.Empty, loaded.Records[0].RoleName);
+        Assert.Equal(string.Empty, loaded.Records[0].Body);
+        Assert.Equal(string.Empty, loaded.Records[1].RoleName);
+        Assert.Equal(string.Empty, loaded.Records[1].Body);
+        Assert.Equal(string.Empty, loaded.RoleDictionary["太郎"]);
+        Assert.DoesNotContain(string.Empty, loaded.RoleDictionary.Keys);
+    }
+
     public void Dispose()
     {
         try
