@@ -1205,7 +1205,8 @@ public partial class MainWindow : Window
 
         var currentRecord = _document.Records[recordIndex];
         var currentBody = currentRecord.Body ?? string.Empty;
-        var segments = BodyPasteProcessor.ParseParagraphSegments(clipboardText);
+        var effectiveClipboardText = ResolveClipboardTextForBodyPaste(clipboardText);
+        var segments = BodyPasteProcessor.ParseParagraphSegments(effectiveClipboardText);
         var shouldConfirmSplit = segments.Count >= 2;
 
         var useSplit = false;
@@ -1225,7 +1226,7 @@ public partial class MainWindow : Window
             currentBody,
             selectionStart,
             selectionEnd,
-            clipboardText,
+            effectiveClipboardText,
             useSplit);
 
         var hasBodyChange = !string.Equals(currentBody, result.CurrentBody, StringComparison.Ordinal);
@@ -1258,6 +1259,28 @@ public partial class MainWindow : Window
 
         var targetRecordIndex = Math.Clamp(recordIndex + result.CaretRecordOffset, 0, _document.Records.Count - 1);
         SendFocusToWebView(targetRecordIndex, "body", result.CaretOffset);
+    }
+
+    private static string ResolveClipboardTextForBodyPaste(string clipboardText)
+    {
+        if (!string.IsNullOrEmpty(clipboardText))
+        {
+            return clipboardText;
+        }
+
+        try
+        {
+            if (System.Windows.Clipboard.ContainsText(System.Windows.TextDataFormat.UnicodeText))
+            {
+                return System.Windows.Clipboard.GetText(System.Windows.TextDataFormat.UnicodeText);
+            }
+        }
+        catch (Exception)
+        {
+            // クリップボード取得失敗時は Web 側の受信値をそのまま使う。
+        }
+
+        return clipboardText;
     }
 
     private static string TrimTrailingEmptyLines(string? text)

@@ -66,7 +66,7 @@ public static class BodyPasteProcessor
 
         foreach (var line in lines)
         {
-            if (string.IsNullOrWhiteSpace(line))
+            if (IsParagraphDelimiterLine(line))
             {
                 FlushCurrentParagraph(currentParagraphLines, segments);
                 continue;
@@ -127,6 +127,38 @@ public static class BodyPasteProcessor
             usedSplit: true,
             normalizedClipboardText,
             paragraphSegments);
+    }
+
+    private static bool IsParagraphDelimiterLine(string line)
+    {
+        if (line.Length == 0)
+        {
+            return true;
+        }
+
+        foreach (var ch in line)
+        {
+            if (IsIgnorableDelimiterCharacter(ch))
+            {
+                continue;
+            }
+
+            if (!char.IsWhiteSpace(ch))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsIgnorableDelimiterCharacter(char ch)
+    {
+        return ch == '\u200B'
+            || ch == '\u200C'
+            || ch == '\u200D'
+            || ch == '\u2060'
+            || ch == '\uFEFF';
     }
 
     private static void FlushCurrentParagraph(List<string> currentParagraphLines, List<string> segments)

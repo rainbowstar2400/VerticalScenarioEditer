@@ -30,6 +30,18 @@ public sealed class BodyPasteProcessorTests
     }
 
     [Fact]
+    public void ParseParagraphSegments_ShouldTreatInvisibleOnlyLineAsBlankSeparator()
+    {
+        var input = "一行目\n\u200B\uFEFF\u2060\n二行目";
+
+        var segments = BodyPasteProcessor.ParseParagraphSegments(input);
+
+        Assert.Equal(2, segments.Count);
+        Assert.Equal("一行目", segments[0]);
+        Assert.Equal("二行目", segments[1]);
+    }
+
+    [Fact]
     public void Apply_ShouldSplitAtCaretAndAppendTailToLastRecord()
     {
         var result = BodyPasteProcessor.Apply(
