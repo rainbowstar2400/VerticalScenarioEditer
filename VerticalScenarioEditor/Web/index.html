@@ -1605,6 +1605,29 @@
       return { start, end };
     }
 
+    function resolveFieldElementFromEventTarget(target, fieldName) {
+      const selector = `[data-field="${fieldName}"]`;
+      if (target instanceof HTMLElement) {
+        if (target.dataset.field === fieldName) {
+          return target;
+        }
+        const closest = target.closest(selector);
+        if (closest instanceof HTMLElement) {
+          return closest;
+        }
+      } else if (target instanceof Node && target.parentElement) {
+        const closest = target.parentElement.closest(selector);
+        if (closest instanceof HTMLElement) {
+          return closest;
+        }
+      }
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active.dataset.field === fieldName) {
+        return active;
+      }
+      return null;
+    }
+
     function isCurrentLineEmpty(element) {
       const info = getTextAndCaret(element);
       const lineStart = info.text.lastIndexOf('\n', Math.max(0, info.caret - 1)) + 1;
@@ -2225,22 +2248,16 @@
     }
 
     function handlePaste(event) {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) {
-        return;
-      }
-      if (target.dataset.field !== 'body') {
+      const bodyTarget = resolveFieldElementFromEventTarget(event.target, 'body');
+      if (!bodyTarget) {
         return;
       }
       const clipboardText = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
-      if (clipboardText.length === 0) {
-        return;
-      }
-      const recordIndex = Number(target.dataset.recordIndex);
+      const recordIndex = Number(bodyTarget.dataset.recordIndex);
       if (Number.isNaN(recordIndex)) {
         return;
       }
-      const selectionRange = getTextSelectionRange(target);
+      const selectionRange = getTextSelectionRange(bodyTarget);
       if (!selectionRange) {
         return;
       }
