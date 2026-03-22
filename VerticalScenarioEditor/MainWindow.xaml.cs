@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
+using VerticalScenarioEditor.History;
 using VerticalScenarioEditor.Models;
 using VerticalScenarioEditor.Serialization;
 using VerticalScenarioEditor.Settings;
@@ -47,8 +48,7 @@ public partial class MainWindow : Window
     private bool _suppressToggleEvents;
     private TaskCompletionSource<bool>? _pdfReadyTcs;
     private bool _isApplyingHistory;
-    private readonly System.Collections.Generic.Stack<DocumentState> _undoStack = new();
-    private readonly System.Collections.Generic.Stack<DocumentState> _redoStack = new();
+    private readonly DocumentHistoryService _documentHistory = new();
 
     public MainWindow()
     {
@@ -372,7 +372,7 @@ public partial class MainWindow : Window
 
     private void OnRoleDictionaryClick(object sender, RoutedEventArgs e)
     {
-        var snapshot = CloneDocument(_document);
+        var snapshot = DocumentStateCloner.Clone(_document);
         var window = new RoleDictionaryWindow(_document)
         {
             Owner = this
@@ -806,7 +806,7 @@ public partial class MainWindow : Window
         {
             if (record.RoleName != text)
             {
-                PushUndoState();
+                PushUndoStateForInput(recordIndex, field);
                 MarkDirty();
             }
             record.RoleName = text;
@@ -815,7 +815,7 @@ public partial class MainWindow : Window
         {
             if (record.Body != text)
             {
-                PushUndoState();
+                PushUndoStateForInput(recordIndex, field);
                 MarkDirty();
             }
             record.Body = text;
@@ -824,7 +824,7 @@ public partial class MainWindow : Window
         {
             if (_document.SummaryText != text)
             {
-                PushUndoState();
+                PushUndoStateForInput(recordIndex, field);
                 MarkDirty();
             }
             _document.SummaryText = text;
@@ -957,7 +957,8 @@ public partial class MainWindow : Window
         {
             return;
         }
-        PushUndoState(CloneDocument(_document));
+
+        _documentHistory.PushSnapshot(_document);
     }
 
     private void PushUndoState(DocumentState snapshot)
@@ -966,39 +967,28 @@ public partial class MainWindow : Window
         {
             return;
         }
-        _undoStack.Push(snapshot);
-        _redoStack.Clear();
+
+        _documentHistory.PushSnapshot(snapshot);
+    }
+
+    private void PushUndoStateForInput(int recordIndex, string? field)
+    {
+        if (_isApplyingHistory)
+        {
+            return;
+        }
+
+        _documentHistory.PushInputSnapshot(_document, recordIndex, field ?? string.Empty);
     }
 
     private void ClearHistory()
     {
-        _undoStack.Clear();
-        _redoStack.Clear();
-    }
-
-    private DocumentState CloneDocument(DocumentState source)
-    {
-        var clone = DocumentState.CreateDefault();
-        clone.PageNumberEnabled = source.PageNumberEnabled;
-        clone.ShowGuides = source.ShowGuides;
-        clone.SummaryText = source.SummaryText ?? string.Empty;
-        clone.Records = new System.Collections.Generic.List<ScriptRecord>();
-        foreach (var record in source.Records)
-        {
-            clone.Records.Add(new ScriptRecord
-            {
-                RoleName = record.RoleName,
-                Body = record.Body
-            });
-        }
-
-        clone.RoleDictionary = new System.Collections.Generic.Dictionary<string, string>(source.RoleDictionary);
-        return clone;
+        _documentHistory.Clear();
     }
 
     private void ApplyDocumentState(DocumentState state)
     {
-        _document = CloneDocument(state);
+        _document = DocumentStateCloner.Clone(state);
         EnsureAtLeastOneRecord();
         UpdatePageNumberToggleState();
         UpdateGuideLineToggleState();
@@ -1013,30 +1003,40 @@ public partial class MainWindow : Window
 
     private void Undo()
     {
-        if (_undoStack.Count == 0)
+        if (!_documentHistory.TryUndo(_document, out var previous))
         {
             return;
         }
+
         _isApplyingHistory = true;
-        _redoStack.Push(CloneDocument(_document));
-        var previous = _undoStack.Pop();
-        _isDirty = true;
-        ApplyDocumentState(previous);
-        _isApplyingHistory = false;
+        try
+        {
+            _isDirty = true;
+            ApplyDocumentState(previous);
+        }
+        finally
+        {
+            _isApplyingHistory = false;
+        }
     }
 
     private void Redo()
     {
-        if (_redoStack.Count == 0)
+        if (!_documentHistory.TryRedo(_document, out var next))
         {
             return;
         }
+
         _isApplyingHistory = true;
-        _undoStack.Push(CloneDocument(_document));
-        var next = _redoStack.Pop();
-        _isDirty = true;
-        ApplyDocumentState(next);
-        _isApplyingHistory = false;
+        try
+        {
+            _isDirty = true;
+            ApplyDocumentState(next);
+        }
+        finally
+        {
+            _isApplyingHistory = false;
+        }
     }
 
     private void UpdateStatusBar()
