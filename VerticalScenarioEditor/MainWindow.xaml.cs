@@ -22,6 +22,9 @@ public partial class MainWindow : Window
     private const string AppDisplayName = "VerticalScenarioEditor(VSE)";
     private const string FileFilter = "VerticalScenarioEditor(VSE) (*.vse)|*.vse|JSON (*.json)|*.json|すべてのファイル (*.*)|*.*";
     private const string HelpUrl = "https://github.com/rainbowstar2400/VerticalScenarioEditor";
+    private const string SettingsSaveFailedTitle = "設定の保存に失敗しました";
+    private const string SettingsSaveFailedRollbackMessage = "設定を保存できませんでした。変更は元に戻しました。";
+    private const string SettingsSaveFailedDeferredMessage = "設定を保存できませんでした。次回起動時に反映されない可能性があります。";
     private DocumentState _document = DocumentState.CreateDefault();
     private string? _currentFilePath;
     private bool _isWebContentReady;
@@ -393,16 +396,18 @@ public partial class MainWindow : Window
 
         if (window.ShowDialog() == true)
         {
+            var previousRoleLabelHeightChars = _appSettings.RoleLabelHeightChars;
             _appSettings.RoleLabelHeightChars = window.RoleLabelHeightChars;
+
+            if (!TrySaveAppSettings(() =>
+            {
+                _appSettings.RoleLabelHeightChars = previousRoleLabelHeightChars;
+            }))
+            {
+                return;
+            }
+
             SendDocumentToWebView();
-            try
-            {
-                AppSettingsStore.Save(_appSettings);
-            }
-            catch (Exception ex)
-            {
-                System.Windows.MessageBox.Show(this, ex.Message, "設定の保存に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-            }
         }
     }
 
@@ -1510,6 +1515,24 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool TrySaveAppSettings(Action? rollbackOnFailure = null)
+    {
+        try
+        {
+            AppSettingsStore.Save(_appSettings);
+            return true;
+        }
+        catch
+        {
+            rollbackOnFailure?.Invoke();
+            var body = rollbackOnFailure == null
+                ? SettingsSaveFailedDeferredMessage
+                : SettingsSaveFailedRollbackMessage;
+            System.Windows.MessageBox.Show(this, body, SettingsSaveFailedTitle, System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            return false;
+        }
+    }
+
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (!ConfirmSaveIfDirty())
@@ -1518,14 +1541,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        try
-        {
-            AppSettingsStore.Save(_appSettings);
-        }
-        catch (Exception ex)
-        {
-            System.Windows.MessageBox.Show(this, ex.Message, "設定の保存に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-        }
+        TrySaveAppSettings();
     }
 
     private void OnFileSaveAsClick(object sender, RoutedEventArgs e)
@@ -1576,8 +1592,19 @@ public partial class MainWindow : Window
             return;
         }
 
+        var previousShowBreakMarkers = _appSettings.ShowBreakMarkers;
         _appSettings.ShowBreakMarkers = BreakMarkerToggleMenuItem.IsChecked == true;
-        AppSettingsStore.Save(_appSettings);
+
+        if (!TrySaveAppSettings(() =>
+        {
+            _appSettings.ShowBreakMarkers = previousShowBreakMarkers;
+            UpdateBreakMarkerToggleState();
+        }))
+        {
+            SendDocumentToWebView();
+            return;
+        }
+
         SendDocumentToWebView();
     }
 
