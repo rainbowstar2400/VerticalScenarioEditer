@@ -1628,8 +1628,143 @@
       return true;
     }
 
+    function isBridgeObject(value) {
+      return value !== null && typeof value === 'object' && !Array.isArray(value);
+    }
+
+    function warnBridgeMessage(direction, reason, message) {
+      console.warn(`[bridge:${direction}:ignore-and-warn] ${reason}`, message);
+    }
+
+    function validateOutgoingMessage(message) {
+      if (!isBridgeObject(message) || typeof message.type !== 'string') {
+        return { ok: false, reason: 'type を含むオブジェクトではありません。' };
+      }
+
+      if (message.type === 'documentReady') {
+        return { ok: true };
+      }
+
+      if (message.type === 'inputPatch') {
+        if (!Number.isInteger(message.recordIndex) || message.recordIndex < 0) {
+          return { ok: false, reason: 'inputPatch.recordIndex が不正です。' };
+        }
+        if (message.field !== 'roleName' && message.field !== 'body' && message.field !== 'summary') {
+          return { ok: false, reason: 'inputPatch.field が不正です。' };
+        }
+        if (typeof message.text !== 'string') {
+          return { ok: false, reason: 'inputPatch.text が文字列ではありません。' };
+        }
+        return { ok: true };
+      }
+
+      if (message.type === 'command') {
+        const name = message.name;
+        const withRecord = name === 'insertAfter' || name === 'insertBefore' || name === 'deleteRecord';
+        const withoutRecord = name === 'undo' || name === 'redo' || name === 'save';
+        if (!withRecord && !withoutRecord) {
+          return { ok: false, reason: 'command.name が不正です。' };
+        }
+        if (withRecord && (!Number.isInteger(message.recordIndex) || message.recordIndex < 0)) {
+          return { ok: false, reason: 'command.recordIndex が不正です。' };
+        }
+        return { ok: true };
+      }
+
+      if (message.type === 'zoomDelta') {
+        if (message.direction !== -1 && message.direction !== 1) {
+          return { ok: false, reason: 'zoomDelta.direction が不正です。' };
+        }
+        return { ok: true };
+      }
+
+      if (message.type === 'layoutStatus') {
+        return { ok: true };
+      }
+
+      if (message.type === 'selectionChanged') {
+        const startNull = message.startRecordIndex === null || message.startRecordIndex === undefined;
+        const endNull = message.endRecordIndex === null || message.endRecordIndex === undefined;
+        if (startNull !== endNull) {
+          return { ok: false, reason: 'selectionChanged の開始・終了インデックスの組み合わせが不正です。' };
+        }
+        if (!startNull && (!Number.isInteger(message.startRecordIndex) || !Number.isInteger(message.endRecordIndex))) {
+          return { ok: false, reason: 'selectionChanged インデックスが不正です。' };
+        }
+        return { ok: true };
+      }
+
+      if (message.type === 'pdfReady') {
+        if (typeof message.hasOverflow !== 'boolean') {
+          return { ok: false, reason: 'pdfReady.hasOverflow が不正です。' };
+        }
+        return { ok: true };
+      }
+
+      return { ok: false, reason: `未対応の送信メッセージです: ${message.type}` };
+    }
+
+    function validateIncomingMessage(message) {
+      if (!isBridgeObject(message) || typeof message.type !== 'string') {
+        return { ok: false, reason: 'type を含むオブジェクトではありません。' };
+      }
+
+      if (message.type === 'initDocument') {
+        if (!isBridgeObject(message.document) || !isBridgeObject(message.settings)) {
+          return { ok: false, reason: 'initDocument の document/settings が不正です。' };
+        }
+        return { ok: true };
+      }
+
+      if (message.type === 'applyRoleDictionary') {
+        if (!isBridgeObject(message.roleDictionary)) {
+          return { ok: false, reason: 'applyRoleDictionary.roleDictionary が不正です。' };
+        }
+        return { ok: true };
+      }
+
+      if (message.type === 'applyOverflowAttention') {
+        if (!Array.isArray(message.overflowAttentionRecords)) {
+          return { ok: false, reason: 'applyOverflowAttention.overflowAttentionRecords が配列ではありません。' };
+        }
+        return { ok: true };
+      }
+
+      if (message.type === 'applySelectionMode') {
+        if (typeof message.selectionMode !== 'boolean') {
+          return { ok: false, reason: 'applySelectionMode.selectionMode が不正です。' };
+        }
+        return { ok: true };
+      }
+
+      if (message.type === 'applyDocumentTitle') {
+        if (typeof message.documentTitle !== 'string') {
+          return { ok: false, reason: 'applyDocumentTitle.documentTitle が不正です。' };
+        }
+        return { ok: true };
+      }
+
+      if (message.type === 'enterPdfMode') {
+        if (typeof message.summaryText !== 'string' || typeof message.documentTitle !== 'string') {
+          return { ok: false, reason: 'enterPdfMode.summaryText/documentTitle が不正です。' };
+        }
+        return { ok: true };
+      }
+
+      if (message.type === 'exitPdfMode') {
+        return { ok: true };
+      }
+
+      return { ok: false, reason: `未対応の受信メッセージです: ${message.type}` };
+    }
+
     function postMessage(message) {
       if (window.chrome && window.chrome.webview) {
+        const validation = validateOutgoingMessage(message);
+        if (!validation.ok) {
+          warnBridgeMessage('web->host', validation.reason, message);
+          return;
+        }
         window.chrome.webview.postMessage(message);
       }
     }
@@ -2126,7 +2261,7 @@
     }
 
     if (window.chrome && window.chrome.webview) {
-      window.chrome.webview.postMessage({ type: 'documentReady' });
+      postMessage({ type: 'documentReady' });
       wrap.addEventListener('input', handleInput, true);
       wrap.addEventListener('keydown', handleKeyDown, true);
       wrap.addEventListener('click', handleSelectionModeClick, true);
@@ -2180,7 +2315,9 @@
       }, { passive: false });
       window.chrome.webview.addEventListener('message', (event) => {
         const message = event.data;
-        if (!message || !message.type) {
+        const validation = validateIncomingMessage(message);
+        if (!validation.ok) {
+          warnBridgeMessage('host->web', validation.reason, message);
           return;
         }
         if (message.type === 'applyRoleDictionary') {

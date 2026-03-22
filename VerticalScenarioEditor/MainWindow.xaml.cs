@@ -12,6 +12,7 @@ using VerticalScenarioEditor.History;
 using VerticalScenarioEditor.Models;
 using VerticalScenarioEditor.Serialization;
 using VerticalScenarioEditor.Settings;
+using VerticalScenarioEditor.WebView;
 
 namespace VerticalScenarioEditor;
 
@@ -26,6 +27,15 @@ public partial class MainWindow : Window
     private const string SettingsSaveFailedTitle = "設定の保存に失敗しました";
     private const string SettingsSaveFailedRollbackMessage = "設定を保存できませんでした。変更は元に戻しました。";
     private const string SettingsSaveFailedDeferredMessage = "設定を保存できませんでした。次回起動時に反映されない可能性があります。";
+    private const string WebMessageValidationFaultPolicy = WebMessageFaultPolicy.InvalidMessageHandling;
+    private static readonly JsonSerializerOptions WebMessageReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+    private static readonly JsonSerializerOptions WebMessageWriteOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
     private DocumentState _document = DocumentState.CreateDefault();
     private string? _currentFilePath;
     private bool _isWebContentReady;
@@ -679,40 +689,34 @@ public partial class MainWindow : Window
         }
 
         EnsureAtLeastOneRecord();
-        var payload = new
+        var payload = new InitDocumentHostMessage
         {
-            type = "initDocument",
-            document = _document,
-            settings = new
+            Document = _document,
+            Settings = new DocumentRenderSettingsHostMessage
             {
-                pageWidthMm = DocumentSettings.PageWidthMm,
-                pageHeightMm = DocumentSettings.PageHeightMm,
-                marginLeftMm = DocumentSettings.MarginLeftMm,
-                marginRightMm = DocumentSettings.MarginRightMm,
-                marginTopMm = DocumentSettings.MarginTopMm,
-                marginBottomMm = DocumentSettings.MarginBottomMm,
-                fontFamily = DocumentSettings.DefaultFontFamilyName,
-                fontSizePt = DocumentSettings.DefaultFontSizePt,
-                lineSpacing = DocumentSettings.LineSpacing,
-                pageGapPx = DocumentSettings.PageGapDip,
-                pageNumberEnabled = _document.PageNumberEnabled,
-                showGuides = _document.ShowGuides,
-                showBreakMarkers = _appSettings.ShowBreakMarkers,
-                documentTitle = string.IsNullOrWhiteSpace(_currentFilePath) ? "無題" : Path.GetFileNameWithoutExtension(_currentFilePath),
-                roleLabelHeightChars = _appSettings.RoleLabelHeightChars,
-                zoomScale = _appSettings.ZoomScale,
-                selectionMode = _isSelectionMode,
-                summaryMode = _isSummaryMode,
-                simpleMode = _isSimpleMode
+                PageWidthMm = DocumentSettings.PageWidthMm,
+                PageHeightMm = DocumentSettings.PageHeightMm,
+                MarginLeftMm = DocumentSettings.MarginLeftMm,
+                MarginRightMm = DocumentSettings.MarginRightMm,
+                MarginTopMm = DocumentSettings.MarginTopMm,
+                MarginBottomMm = DocumentSettings.MarginBottomMm,
+                FontFamily = DocumentSettings.DefaultFontFamilyName,
+                FontSizePt = DocumentSettings.DefaultFontSizePt,
+                LineSpacing = DocumentSettings.LineSpacing,
+                PageGapPx = DocumentSettings.PageGapDip,
+                PageNumberEnabled = _document.PageNumberEnabled,
+                ShowGuides = _document.ShowGuides,
+                ShowBreakMarkers = _appSettings.ShowBreakMarkers,
+                DocumentTitle = string.IsNullOrWhiteSpace(_currentFilePath) ? "無題" : Path.GetFileNameWithoutExtension(_currentFilePath),
+                RoleLabelHeightChars = _appSettings.RoleLabelHeightChars,
+                ZoomScale = _appSettings.ZoomScale,
+                SelectionMode = _isSelectionMode,
+                SummaryMode = _isSummaryMode,
+                SimpleMode = _isSimpleMode
             }
         };
 
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
-
-        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
+        PostMessageToWebView(payload);
     }
 
     private void SendRoleDictionaryToWebView()
@@ -722,17 +726,22 @@ public partial class MainWindow : Window
             return;
         }
 
-        var payload = new
+        var payload = new ApplyRoleDictionaryHostMessage
         {
-            type = "applyRoleDictionary",
-            roleDictionary = _document.RoleDictionary
+            RoleDictionary = _document.RoleDictionary
         };
 
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
+        PostMessageToWebView(payload);
+    }
 
+    private void PostMessageToWebView(object payload)
+    {
+        if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
+        {
+            return;
+        }
+
+        var json = JsonSerializer.Serialize(payload, WebMessageWriteOptions);
         EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
     }
 
@@ -741,44 +750,265 @@ public partial class MainWindow : Window
         try
         {
             using var document = JsonDocument.Parse(e.WebMessageAsJson);
-            if (!document.RootElement.TryGetProperty("type", out var typeProperty))
+            var root = document.RootElement;
+            if (!TryDeserializeWebMessage(root, out WebMessageEnvelope? envelope)
+                || envelope == null
+                || string.IsNullOrWhiteSpace(envelope.Type))
             {
+                WarnInvalidWebMessage("type が欠落しているため破棄しました。");
                 return;
             }
 
-            var type = typeProperty.GetString();
-            switch (type)
+            switch (envelope.Type)
             {
                 case "documentReady":
                     _isWebContentReady = true;
                     SendDocumentToWebView();
                     break;
                 case "inputPatch":
-                    ApplyInputPatch(document.RootElement);
+                    if (!TryDeserializeWebMessage(root, out InputPatchWebMessage? inputPatch))
+                    {
+                        WarnInvalidWebMessage("inputPatch メッセージの形式が不正です。");
+                        return;
+                    }
+                    if (!ValidateInputPatchMessage(inputPatch, out var inputPatchError))
+                    {
+                        WarnInvalidWebMessage(inputPatchError);
+                        return;
+                    }
+                    ApplyInputPatch(root);
                     break;
                 case "command":
-                    ApplyCommand(document.RootElement);
+                    if (!TryDeserializeWebMessage(root, out CommandWebMessage? command))
+                    {
+                        WarnInvalidWebMessage("command メッセージの形式が不正です。");
+                        return;
+                    }
+                    if (!ValidateCommandMessage(command, out var commandError))
+                    {
+                        WarnInvalidWebMessage(commandError);
+                        return;
+                    }
+                    ApplyCommand(root);
                     break;
                 case "zoomDelta":
-                    ApplyZoomDelta(document.RootElement);
+                    if (!TryDeserializeWebMessage(root, out ZoomDeltaWebMessage? zoomDelta))
+                    {
+                        WarnInvalidWebMessage("zoomDelta メッセージの形式が不正です。");
+                        return;
+                    }
+                    if (!ValidateZoomDeltaMessage(zoomDelta, out var zoomDeltaError))
+                    {
+                        WarnInvalidWebMessage(zoomDeltaError);
+                        return;
+                    }
+                    ApplyZoomDelta(root);
                     break;
                 case "layoutStatus":
-                    ApplyLayoutStatus(document.RootElement);
+                    if (!TryDeserializeWebMessage(root, out LayoutStatusWebMessage? layoutStatus))
+                    {
+                        WarnInvalidWebMessage("layoutStatus メッセージの形式が不正です。");
+                        return;
+                    }
+                    if (!ValidateLayoutStatusMessage(layoutStatus, out var layoutStatusError))
+                    {
+                        WarnInvalidWebMessage(layoutStatusError);
+                        return;
+                    }
+                    ApplyLayoutStatus(root);
                     break;
                 case "selectionChanged":
-                    ApplySelectionChanged(document.RootElement);
+                    if (!TryDeserializeWebMessage(root, out SelectionChangedWebMessage? selectionChanged))
+                    {
+                        WarnInvalidWebMessage("selectionChanged メッセージの形式が不正です。");
+                        return;
+                    }
+                    if (!ValidateSelectionChangedMessage(selectionChanged, out var selectionChangedError))
+                    {
+                        WarnInvalidWebMessage(selectionChangedError);
+                        return;
+                    }
+                    ApplySelectionChanged(root);
                     break;
                 case "pdfReady":
-                    var hasOverflow = document.RootElement.TryGetProperty("hasOverflow", out var overflowProperty)
-                        && overflowProperty.ValueKind == JsonValueKind.True;
-                    _pdfReadyTcs?.TrySetResult(!hasOverflow);
+                    if (!TryDeserializeWebMessage(root, out PdfReadyWebMessage? pdfReady) || pdfReady == null)
+                    {
+                        WarnInvalidWebMessage("pdfReady メッセージの形式が不正です。");
+                        return;
+                    }
+                    _pdfReadyTcs?.TrySetResult(!pdfReady.HasOverflow);
+                    break;
+                default:
+                    WarnInvalidWebMessage($"未定義の type を受信しました: {envelope.Type}");
                     break;
             }
+        }
+        catch (JsonException)
+        {
+            WarnInvalidWebMessage("JSON 解析に失敗したため破棄しました。");
         }
         catch (Exception ex)
         {
             System.Windows.MessageBox.Show(this, ex.Message, "WebView2 メッセージの処理に失敗しました", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
         }
+    }
+
+    private static bool TryDeserializeWebMessage<T>(JsonElement root, out T? message) where T : class
+    {
+        try
+        {
+            message = root.Deserialize<T>(WebMessageReadOptions);
+            return message != null;
+        }
+        catch
+        {
+            message = null;
+            return false;
+        }
+    }
+
+    private static bool ValidateInputPatchMessage(InputPatchWebMessage? message, out string reason)
+    {
+        if (message == null)
+        {
+            reason = "inputPatch メッセージが null です。";
+            return false;
+        }
+
+        if (message.RecordIndex < 0)
+        {
+            reason = "inputPatch.recordIndex が不正です。";
+            return false;
+        }
+
+        if (message.Field != "roleName" && message.Field != "body" && message.Field != "summary")
+        {
+            reason = "inputPatch.field が未対応です。";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private static bool ValidateCommandMessage(CommandWebMessage? message, out string reason)
+    {
+        if (message == null || string.IsNullOrWhiteSpace(message.Name))
+        {
+            reason = "command.name が不正です。";
+            return false;
+        }
+
+        var needsRecordIndex = message.Name == "insertAfter"
+            || message.Name == "insertBefore"
+            || message.Name == "deleteRecord";
+
+        if (!needsRecordIndex
+            && message.Name != "undo"
+            && message.Name != "redo"
+            && message.Name != "save")
+        {
+            reason = $"未対応の command.name です: {message.Name}";
+            return false;
+        }
+
+        if (needsRecordIndex && (!message.RecordIndex.HasValue || message.RecordIndex.Value < 0))
+        {
+            reason = $"command.{message.Name} の recordIndex が不正です。";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private static bool ValidateZoomDeltaMessage(ZoomDeltaWebMessage? message, out string reason)
+    {
+        if (message == null || (message.Direction != -1 && message.Direction != 1))
+        {
+            reason = "zoomDelta.direction が不正です。";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private static bool ValidateLayoutStatusMessage(LayoutStatusWebMessage? message, out string reason)
+    {
+        if (message == null)
+        {
+            reason = "layoutStatus メッセージが null です。";
+            return false;
+        }
+
+        if (message.OverflowRecords != null && message.OverflowRecords.Exists(index => index < 0))
+        {
+            reason = "layoutStatus.overflowRecords に不正な値があります。";
+            return false;
+        }
+
+        if (message.OverflowCount.HasValue && message.OverflowCount.Value < 0)
+        {
+            reason = "layoutStatus.overflowCount が不正です。";
+            return false;
+        }
+
+        if (message.CurrentPage.HasValue && message.CurrentPage.Value < 1)
+        {
+            reason = "layoutStatus.currentPage が不正です。";
+            return false;
+        }
+
+        if (message.TotalPages.HasValue && message.TotalPages.Value < 1)
+        {
+            reason = "layoutStatus.totalPages が不正です。";
+            return false;
+        }
+
+        if (message.FocusedRecordIndex.HasValue && message.FocusedRecordIndex.Value < 0)
+        {
+            reason = "layoutStatus.focusedRecordIndex が不正です。";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private static bool ValidateSelectionChangedMessage(SelectionChangedWebMessage? message, out string reason)
+    {
+        if (message == null)
+        {
+            reason = "selectionChanged メッセージが null です。";
+            return false;
+        }
+
+        if (message.StartRecordIndex.HasValue && message.StartRecordIndex.Value < 0)
+        {
+            reason = "selectionChanged.startRecordIndex が不正です。";
+            return false;
+        }
+
+        if (message.EndRecordIndex.HasValue && message.EndRecordIndex.Value < 0)
+        {
+            reason = "selectionChanged.endRecordIndex が不正です。";
+            return false;
+        }
+
+        if (message.StartRecordIndex.HasValue != message.EndRecordIndex.HasValue)
+        {
+            reason = "selectionChanged の開始・終了インデックスの組み合わせが不正です。";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private void WarnInvalidWebMessage(string detail)
+    {
+        System.Diagnostics.Debug.WriteLine($"[WebView2:{WebMessageValidationFaultPolicy}] {detail}");
     }
 
     private void ApplyInputPatch(JsonElement root)
@@ -1465,18 +1695,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        var payload = new
+        var payload = new ApplyOverflowAttentionHostMessage
         {
-            type = "applyOverflowAttention",
-            overflowAttentionRecords = _overflowAttentionRecords
+            OverflowAttentionRecords = _overflowAttentionRecords
         };
 
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
-
-        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
+        PostMessageToWebView(payload);
     }
 
     private void SendSelectionModeToWebView()
@@ -1486,18 +1710,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        var payload = new
+        var payload = new ApplySelectionModeHostMessage
         {
-            type = "applySelectionMode",
-            selectionMode = _isSelectionMode
+            SelectionMode = _isSelectionMode
         };
 
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
-
-        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
+        PostMessageToWebView(payload);
     }
 
     private static void TrySetPdfPageSize(CoreWebView2PrintSettings settings, double widthInches, double heightInches)
@@ -1634,19 +1852,13 @@ public partial class MainWindow : Window
         _pdfReadyTcs?.TrySetCanceled();
         _pdfReadyTcs = new TaskCompletionSource<bool>();
 
-        var payload = new
+        var payload = new EnterPdfModeHostMessage
         {
-            type = "enterPdfMode",
-            summaryText = _document.SummaryText ?? string.Empty,
-            documentTitle = documentTitle
+            SummaryText = _document.SummaryText ?? string.Empty,
+            DocumentTitle = documentTitle
         };
 
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
-
-        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
+        PostMessageToWebView(payload);
         var completed = await Task.WhenAny(_pdfReadyTcs.Task, Task.Delay(1500));
         return completed == _pdfReadyTcs.Task && _pdfReadyTcs.Task.Result;
     }
@@ -1658,18 +1870,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        var payload = new
+        var payload = new ApplyDocumentTitleHostMessage
         {
-            type = "applyDocumentTitle",
-            documentTitle = title
+            DocumentTitle = title
         };
 
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
-
-        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
+        PostMessageToWebView(payload);
     }
 
     private void ExitPdfCombinedMode()
@@ -1679,17 +1885,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var payload = new
-        {
-            type = "exitPdfMode"
-        };
-
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
-
-        EditorWebView.CoreWebView2.PostWebMessageAsJson(json);
+        PostMessageToWebView(new ExitPdfModeHostMessage());
     }
 
     private bool ConfirmSaveIfDirty()
