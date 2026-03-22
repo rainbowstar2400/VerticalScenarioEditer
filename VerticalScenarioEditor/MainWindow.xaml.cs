@@ -10,6 +10,7 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using VerticalScenarioEditor.History;
 using VerticalScenarioEditor.Models;
+using VerticalScenarioEditor.RoleManagement;
 using VerticalScenarioEditor.Serialization;
 using VerticalScenarioEditor.Settings;
 using VerticalScenarioEditor.WebView;
@@ -188,6 +189,7 @@ public partial class MainWindow : Window
         {
             var loadedDocument = DocumentFileService.Load(dialog.FileName);
             _document = loadedDocument;
+            SynchronizeRoleDictionary();
             _currentFilePath = dialog.FileName;
             _isDirty = false;
             EnsureAtLeastOneRecord();
@@ -234,6 +236,7 @@ public partial class MainWindow : Window
             rawText = rawText.Replace("\uFEFF", string.Empty);
             var lines = rawText.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
             _document = ParseFormattedText(lines);
+            SynchronizeRoleDictionary();
             _currentFilePath = null;
             _isDirty = true;
             EnsureAtLeastOneRecord();
@@ -278,6 +281,7 @@ public partial class MainWindow : Window
         }
 
         _document = DocumentState.CreateDefault();
+        SynchronizeRoleDictionary();
         _currentFilePath = null;
         _isDirty = false;
         EnsureAtLeastOneRecord();
@@ -391,6 +395,7 @@ public partial class MainWindow : Window
         if (window.ShowDialog() == true)
         {
             PushUndoState(snapshot);
+            SynchronizeRoleDictionary();
             MarkDirty();
             SendDocumentToWebView();
             SendRoleDictionaryToWebView();
@@ -1038,6 +1043,11 @@ public partial class MainWindow : Window
             {
                 PushUndoStateForInput(recordIndex, field);
                 MarkDirty();
+                record.RoleName = text;
+                SynchronizeRoleDictionary();
+                SendRoleDictionaryToWebView();
+                UpdateStatusBar();
+                return;
             }
             record.RoleName = text;
         }
@@ -1130,9 +1140,11 @@ public partial class MainWindow : Window
             case "deleteRecord":
                 PushUndoState();
                 _document.Records.RemoveAt(recordIndex);
+                SynchronizeRoleDictionary();
                 MarkDirty();
                 EnsureAtLeastOneRecord();
                 SendDocumentToWebView();
+                SendRoleDictionaryToWebView();
                 UpdateStatusBar();
                 break;
         }
@@ -1155,6 +1167,11 @@ public partial class MainWindow : Window
             break;
         }
         return string.Join("\n", lines);
+    }
+
+    private void SynchronizeRoleDictionary()
+    {
+        RoleDictionarySynchronizer.Synchronize(_document);
     }
 
     private void EnsureAtLeastOneRecord()
@@ -1219,6 +1236,7 @@ public partial class MainWindow : Window
     private void ApplyDocumentState(DocumentState state)
     {
         _document = DocumentStateCloner.Clone(state);
+        SynchronizeRoleDictionary();
         EnsureAtLeastOneRecord();
         UpdatePageNumberToggleState();
         UpdateGuideLineToggleState();

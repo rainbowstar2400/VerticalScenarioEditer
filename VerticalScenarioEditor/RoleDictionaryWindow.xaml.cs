@@ -4,8 +4,8 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Forms;
-using MessageBox = System.Windows.MessageBox;
 using VerticalScenarioEditor.Models;
+using VerticalScenarioEditor.RoleManagement;
 using VerticalScenarioEditor.ViewModels;
 
 namespace VerticalScenarioEditor;
@@ -33,101 +33,21 @@ public partial class RoleDictionaryWindow : Window
 
     private void RefreshEntries()
     {
-        var colorByRole = new Dictionary<string, string>();
-        foreach (var entry in _document.RoleDictionary)
-        {
-            foreach (var role in ExtractRoleNames(entry.Key))
-            {
-                if (!colorByRole.ContainsKey(role))
-                {
-                    colorByRole[role] = entry.Value;
-                }
-            }
-        }
-
-        var rolesFromRecords = _document.Records
-            .SelectMany(record => ExtractRoleNames(record.RoleName))
-            .Distinct()
-            .OrderBy(name => name);
-
-        var allRoles = new List<string>();
-        allRoles.AddRange(colorByRole.Keys);
-        allRoles.AddRange(rolesFromRecords);
+        RoleDictionarySynchronizer.Synchronize(_document);
 
         Entries.Clear();
-        foreach (var role in allRoles.Distinct().OrderBy(name => name))
+        foreach (var role in _document.RoleDictionary.Keys.OrderBy(name => name))
         {
             Entries.Add(new RoleColorEntry
             {
                 RoleName = role,
-                Color = colorByRole.TryGetValue(role, out var color) ? color : string.Empty
+                Color = _document.RoleDictionary.TryGetValue(role, out var color) ? color : string.Empty
             });
-        }
-    }
-
-    private static IEnumerable<string> ExtractRoleNames(string? roleName)
-    {
-        if (string.IsNullOrWhiteSpace(roleName))
-        {
-            yield break;
-        }
-
-        foreach (var part in roleName.Split('／', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var trimmed = part.Trim();
-            if (string.IsNullOrWhiteSpace(trimmed))
-            {
-                continue;
-            }
-            if (trimmed.StartsWith("シーン", StringComparison.Ordinal))
-            {
-                continue;
-            }
-            yield return trimmed;
         }
     }
 
     private void OnRefreshClick(object sender, RoutedEventArgs e)
     {
-        var usedRoles = _document.Records
-            .SelectMany(record => ExtractRoleNames(record.RoleName))
-            .ToHashSet();
-
-        var unusedRoles = new List<string>();
-        foreach (var entry in _document.RoleDictionary)
-        {
-            var roles = ExtractRoleNames(entry.Key).ToArray();
-            if (roles.Length == 0)
-            {
-                continue;
-            }
-
-            if (!roles.Any(role => usedRoles.Contains(role)))
-            {
-                unusedRoles.Add(entry.Key);
-            }
-        }
-
-        if (unusedRoles.Count > 0)
-        {
-            var message = "次の役名は現在使われていません。削除しますか？\n" +
-                string.Join("\n", unusedRoles.Select(role => $"・{role}"));
-            var result = MessageBox.Show(
-                this,
-                message,
-                "役名辞書の更新",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-
-            if (result == MessageBoxResult.Yes)
-            {
-                foreach (var role in unusedRoles)
-                {
-                    _document.RoleDictionary.Remove(role);
-                }
-            }
-        }
-
         RefreshEntries();
     }
 
@@ -141,7 +61,7 @@ public partial class RoleDictionaryWindow : Window
         {
             var role = entry.RoleName?.Trim();
             var color = NormalizeColor(entry.Color);
-            if (string.IsNullOrWhiteSpace(role) || string.IsNullOrWhiteSpace(color))
+            if (string.IsNullOrWhiteSpace(role))
             {
                 continue;
             }
@@ -149,6 +69,7 @@ public partial class RoleDictionaryWindow : Window
         }
 
         _document.RoleDictionary = nextDictionary;
+        RoleDictionarySynchronizer.Synchronize(_document);
         DialogResult = true;
     }
 
