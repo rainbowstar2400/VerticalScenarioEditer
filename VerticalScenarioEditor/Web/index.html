@@ -1581,6 +1581,30 @@
       return { text: fullText, caret: caretText.length };
     }
 
+    function getTextSelectionRange(element) {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        const info = getTextAndCaret(element);
+        return { start: info.caret, end: info.caret };
+      }
+      const range = selection.getRangeAt(0);
+      if (!element.contains(range.startContainer) || !element.contains(range.endContainer)) {
+        const info = getTextAndCaret(element);
+        return { start: info.caret, end: info.caret };
+      }
+      const startRange = range.cloneRange();
+      startRange.selectNodeContents(element);
+      startRange.setEnd(range.startContainer, range.startOffset);
+      const endRange = range.cloneRange();
+      endRange.selectNodeContents(element);
+      endRange.setEnd(range.endContainer, range.endOffset);
+      const startText = normalizeText(extractText(startRange.cloneContents()));
+      const endText = normalizeText(extractText(endRange.cloneContents()));
+      const start = Math.min(startText.length, endText.length);
+      const end = Math.max(startText.length, endText.length);
+      return { start, end };
+    }
+
     function isCurrentLineEmpty(element) {
       const info = getTextAndCaret(element);
       const lineStart = info.text.lastIndexOf('\n', Math.max(0, info.caret - 1)) + 1;
@@ -1628,6 +1652,134 @@
       return true;
     }
 
+    function countNormalizedTextLength(text) {
+      if (!text) {
+        return 0;
+      }
+      let count = 0;
+      for (let index = 0; index < text.length; index += 1) {
+        const ch = text[index];
+        if (ch === '\r' || ch === '\u200B' || ch === '\u00A0' || ch === '\uFEFF' || ch === '\u2060') {
+          continue;
+        }
+        count += 1;
+      }
+      return count;
+    }
+
+    function rawIndexFromNormalizedOffset(text, normalizedOffset) {
+      if (!text || normalizedOffset <= 0) {
+        return 0;
+      }
+      let count = 0;
+      for (let index = 0; index < text.length; index += 1) {
+        const ch = text[index];
+        if (ch === '\r' || ch === '\u200B' || ch === '\u00A0' || ch === '\uFEFF' || ch === '\u2060') {
+          continue;
+        }
+        count += 1;
+        if (count >= normalizedOffset) {
+          return index + 1;
+        }
+      }
+      return text.length;
+    }
+
+    function resolveNodeOffsetPointByTextOffset(element, textOffset) {
+      const walker = document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+        {
+          acceptNode(node) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const current = node;
+              if (current.classList && current.classList.contains('caret-anchor') && current.dataset.ghost === 'true') {
+                return NodeFilter.FILTER_REJECT;
+              }
+              if (current === element || current.tagName === 'BR') {
+                return NodeFilter.FILTER_ACCEPT;
+              }
+              return NodeFilter.FILTER_SKIP;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          },
+        },
+      );
+
+      let remaining = textOffset;
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (node.nodeType === Node.TEXT_NODE) {
+          const raw = node.nodeValue || '';
+          const normalizedLength = countNormalizedTextLength(raw);
+          if (remaining <= normalizedLength) {
+            return {
+              container: node,
+              offset: rawIndexFromNormalizedOffset(raw, remaining),
+            };
+          }
+          remaining -= normalizedLength;
+          continue;
+        }
+
+        if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'BR') {
+          const parent = node.parentNode;
+          if (!parent) {
+            continue;
+          }
+          const indexInParent = Array.prototype.indexOf.call(parent.childNodes, node);
+          if (remaining === 0) {
+            return { container: parent, offset: indexInParent };
+          }
+          remaining -= 1;
+          if (remaining === 0) {
+            return { container: parent, offset: indexInParent + 1 };
+          }
+        }
+      }
+
+      return null;
+    }
+
+    function setCaretOffsetInElement(element, textOffset) {
+      if (!element) {
+        return;
+      }
+      const normalizedTextLength = normalizeTextFromElement(element).length;
+      const clampedOffset = Math.max(0, Math.min(textOffset, normalizedTextLength));
+      const selection = window.getSelection();
+      if (!selection) {
+        return;
+      }
+      const point = resolveNodeOffsetPointByTextOffset(element, clampedOffset);
+      const range = document.createRange();
+      if (point) {
+        range.setStart(point.container, point.offset);
+        range.collapse(true);
+      } else {
+        range.selectNodeContents(element);
+        range.collapse(false);
+      }
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    function focusRecordAtOffset(recordIndex, field, caretOffset) {
+      const recordElement = getRecordElement(recordIndex);
+      if (!recordElement) {
+        return false;
+      }
+      const target = field === 'roleName'
+        ? getRoleElement(recordElement)
+        : getBodyElement(recordElement);
+      if (!target) {
+        return false;
+      }
+      focusElement(target, true);
+      setCaretOffsetInElement(target, caretOffset);
+      return true;
+    }
+
     function isBridgeObject(value) {
       return value !== null && typeof value === 'object' && !Array.isArray(value);
     }
@@ -1660,13 +1812,24 @@
 
       if (message.type === 'command') {
         const name = message.name;
-        const withRecord = name === 'insertAfter' || name === 'insertBefore' || name === 'deleteRecord';
+        const withRecord = name === 'insertAfter' || name === 'insertBefore' || name === 'deleteRecord' || name === 'pasteBody';
         const withoutRecord = name === 'undo' || name === 'redo' || name === 'save';
         if (!withRecord && !withoutRecord) {
           return { ok: false, reason: 'command.name が不正です。' };
         }
         if (withRecord && (!Number.isInteger(message.recordIndex) || message.recordIndex < 0)) {
           return { ok: false, reason: 'command.recordIndex が不正です。' };
+        }
+        if (name === 'pasteBody') {
+          if (!Number.isInteger(message.selectionStart) || message.selectionStart < 0) {
+            return { ok: false, reason: 'command.pasteBody.selectionStart が不正です。' };
+          }
+          if (!Number.isInteger(message.selectionEnd) || message.selectionEnd < message.selectionStart) {
+            return { ok: false, reason: 'command.pasteBody.selectionEnd が不正です。' };
+          }
+          if (typeof message.clipboardText !== 'string') {
+            return { ok: false, reason: 'command.pasteBody.clipboardText が不正です。' };
+          }
         }
         return { ok: true };
       }
@@ -1740,6 +1903,19 @@
       if (message.type === 'applyDocumentTitle') {
         if (typeof message.documentTitle !== 'string') {
           return { ok: false, reason: 'applyDocumentTitle.documentTitle が不正です。' };
+        }
+        return { ok: true };
+      }
+
+      if (message.type === 'applyFocus') {
+        if (!Number.isInteger(message.recordIndex) || message.recordIndex < 0) {
+          return { ok: false, reason: 'applyFocus.recordIndex が不正です。' };
+        }
+        if (message.field !== 'body' && message.field !== 'roleName') {
+          return { ok: false, reason: 'applyFocus.field が不正です。' };
+        }
+        if (!Number.isInteger(message.caretOffset) || message.caretOffset < 0) {
+          return { ok: false, reason: 'applyFocus.caretOffset が不正です。' };
         }
         return { ok: true };
       }
@@ -2048,6 +2224,37 @@
       }
     }
 
+    function handlePaste(event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      if (target.dataset.field !== 'body') {
+        return;
+      }
+      const clipboardText = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
+      if (clipboardText.length === 0) {
+        return;
+      }
+      const recordIndex = Number(target.dataset.recordIndex);
+      if (Number.isNaN(recordIndex)) {
+        return;
+      }
+      const selectionRange = getTextSelectionRange(target);
+      if (!selectionRange) {
+        return;
+      }
+      event.preventDefault();
+      postMessage({
+        type: 'command',
+        name: 'pasteBody',
+        recordIndex,
+        selectionStart: selectionRange.start,
+        selectionEnd: selectionRange.end,
+        clipboardText,
+      });
+    }
+
     function handleKeyDown(event) {
       const target = event.target;
       if (!(target instanceof HTMLElement)) {
@@ -2263,6 +2470,7 @@
     if (window.chrome && window.chrome.webview) {
       postMessage({ type: 'documentReady' });
       wrap.addEventListener('input', handleInput, true);
+      wrap.addEventListener('paste', handlePaste, true);
       wrap.addEventListener('keydown', handleKeyDown, true);
       wrap.addEventListener('click', handleSelectionModeClick, true);
       wrap.addEventListener('mousedown', handleSelectionModeMouseBlock, true);
@@ -2336,6 +2544,10 @@
           if (message.documentTitle) {
             document.title = message.documentTitle;
           }
+          return;
+        }
+        if (message.type === 'applyFocus') {
+          focusRecordAtOffset(message.recordIndex, message.field, message.caretOffset);
           return;
         }
         if (message.type === 'enterPdfMode') {

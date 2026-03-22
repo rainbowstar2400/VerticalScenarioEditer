@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
+using VerticalScenarioEditor.Editing;
 using VerticalScenarioEditor.History;
 using VerticalScenarioEditor.Models;
 using VerticalScenarioEditor.RoleManagement;
@@ -906,7 +907,8 @@ public partial class MainWindow : Window
 
         var needsRecordIndex = message.Name == "insertAfter"
             || message.Name == "insertBefore"
-            || message.Name == "deleteRecord";
+            || message.Name == "deleteRecord"
+            || message.Name == "pasteBody";
 
         if (!needsRecordIndex
             && message.Name != "undo"
@@ -921,6 +923,27 @@ public partial class MainWindow : Window
         {
             reason = $"command.{message.Name} の recordIndex が不正です。";
             return false;
+        }
+
+        if (message.Name == "pasteBody")
+        {
+            if (!message.SelectionStart.HasValue || message.SelectionStart.Value < 0)
+            {
+                reason = "command.pasteBody の selectionStart が不正です。";
+                return false;
+            }
+
+            if (!message.SelectionEnd.HasValue || message.SelectionEnd.Value < message.SelectionStart.Value)
+            {
+                reason = "command.pasteBody の selectionEnd が不正です。";
+                return false;
+            }
+
+            if (message.ClipboardText == null)
+            {
+                reason = "command.pasteBody の clipboardText が不正です。";
+                return false;
+            }
         }
 
         reason = string.Empty;
@@ -1147,7 +1170,94 @@ public partial class MainWindow : Window
                 SendRoleDictionaryToWebView();
                 UpdateStatusBar();
                 break;
+            case "pasteBody":
+            {
+                if (!root.TryGetProperty("selectionStart", out var selectionStartProperty)
+                    || !selectionStartProperty.TryGetInt32(out var selectionStart))
+                {
+                    return;
+                }
+
+                if (!root.TryGetProperty("selectionEnd", out var selectionEndProperty)
+                    || !selectionEndProperty.TryGetInt32(out var selectionEnd))
+                {
+                    return;
+                }
+
+                if (!root.TryGetProperty("clipboardText", out var clipboardProperty))
+                {
+                    return;
+                }
+
+                var clipboardText = clipboardProperty.GetString() ?? string.Empty;
+                ApplyBodyPasteCommand(recordIndex, selectionStart, selectionEnd, clipboardText);
+                break;
+            }
         }
+    }
+
+    private void ApplyBodyPasteCommand(int recordIndex, int selectionStart, int selectionEnd, string clipboardText)
+    {
+        if (recordIndex < 0 || recordIndex >= _document.Records.Count)
+        {
+            return;
+        }
+
+        var currentRecord = _document.Records[recordIndex];
+        var currentBody = currentRecord.Body ?? string.Empty;
+        var segments = BodyPasteProcessor.ParseParagraphSegments(clipboardText);
+        var shouldConfirmSplit = segments.Count >= 2;
+
+        var useSplit = false;
+        if (shouldConfirmSplit)
+        {
+            var confirmResult = System.Windows.MessageBox.Show(
+                this,
+                "貼り付け内容を複数の本文レコードに分割して貼り付けますか？\nいいえを選ぶと通常の貼り付けになります。",
+                "貼り付け方法の確認",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question,
+                System.Windows.MessageBoxResult.Yes);
+            useSplit = confirmResult == System.Windows.MessageBoxResult.Yes;
+        }
+
+        var result = BodyPasteProcessor.Apply(
+            currentBody,
+            selectionStart,
+            selectionEnd,
+            clipboardText,
+            useSplit);
+
+        var hasBodyChange = !string.Equals(currentBody, result.CurrentBody, StringComparison.Ordinal);
+        var hasInsertedRecords = result.InsertedBodies.Count > 0;
+        if (!hasBodyChange && !hasInsertedRecords)
+        {
+            SendFocusToWebView(recordIndex, "body", result.CaretOffset);
+            return;
+        }
+
+        PushUndoState();
+        currentRecord.Body = result.CurrentBody;
+        if (hasInsertedRecords)
+        {
+            var insertAt = recordIndex + 1;
+            foreach (var insertedBody in result.InsertedBodies)
+            {
+                _document.Records.Insert(insertAt, new ScriptRecord
+                {
+                    RoleName = string.Empty,
+                    Body = insertedBody
+                });
+                insertAt += 1;
+            }
+        }
+
+        MarkDirty();
+        SendDocumentToWebView();
+        UpdateStatusBar();
+
+        var targetRecordIndex = Math.Clamp(recordIndex + result.CaretRecordOffset, 0, _document.Records.Count - 1);
+        SendFocusToWebView(targetRecordIndex, "body", result.CaretOffset);
     }
 
     private static string TrimTrailingEmptyLines(string? text)
@@ -1731,6 +1841,33 @@ public partial class MainWindow : Window
         var payload = new ApplySelectionModeHostMessage
         {
             SelectionMode = _isSelectionMode
+        };
+
+        PostMessageToWebView(payload);
+    }
+
+    private void SendFocusToWebView(int recordIndex, string field, int caretOffset)
+    {
+        if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
+        {
+            return;
+        }
+
+        if (recordIndex < 0 || recordIndex >= _document.Records.Count)
+        {
+            return;
+        }
+
+        if (field != "body" && field != "roleName")
+        {
+            return;
+        }
+
+        var payload = new ApplyFocusHostMessage
+        {
+            RecordIndex = recordIndex,
+            Field = field,
+            CaretOffset = Math.Max(0, caretOffset)
         };
 
         PostMessageToWebView(payload);

@@ -43,6 +43,15 @@ public sealed class CommandWebMessage
 
     [JsonPropertyName("bodyText")]
     public string? BodyText { get; set; }
+
+    [JsonPropertyName("selectionStart")]
+    public int? SelectionStart { get; set; }
+
+    [JsonPropertyName("selectionEnd")]
+    public int? SelectionEnd { get; set; }
+
+    [JsonPropertyName("clipboardText")]
+    public string? ClipboardText { get; set; }
 }
 
 public sealed class ZoomDeltaWebMessage
@@ -214,6 +223,21 @@ public sealed class ApplyDocumentTitleHostMessage
 
     [JsonPropertyName("documentTitle")]
     public string DocumentTitle { get; set; } = string.Empty;
+}
+
+public sealed class ApplyFocusHostMessage
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "applyFocus";
+
+    [JsonPropertyName("recordIndex")]
+    public int RecordIndex { get; set; }
+
+    [JsonPropertyName("field")]
+    public string Field { get; set; } = "body";
+
+    [JsonPropertyName("caretOffset")]
+    public int CaretOffset { get; set; }
 }
 
 public sealed class ExitPdfModeHostMessage
