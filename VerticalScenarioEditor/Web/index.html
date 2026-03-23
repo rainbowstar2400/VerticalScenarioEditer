@@ -1835,7 +1835,11 @@
 
       if (message.type === 'command') {
         const name = message.name;
-        const withRecord = name === 'insertAfter' || name === 'insertBefore' || name === 'deleteRecord' || name === 'pasteBody';
+        const withRecord = name === 'insertAfter'
+          || name === 'insertBefore'
+          || name === 'deleteRecord'
+          || name === 'pasteBody'
+          || name === 'pasteRole';
         const withoutRecord = name === 'undo' || name === 'redo' || name === 'save';
         if (!withRecord && !withoutRecord) {
           return { ok: false, reason: 'command.name が不正です。' };
@@ -1843,15 +1847,15 @@
         if (withRecord && (!Number.isInteger(message.recordIndex) || message.recordIndex < 0)) {
           return { ok: false, reason: 'command.recordIndex が不正です。' };
         }
-        if (name === 'pasteBody') {
+        if (name === 'pasteBody' || name === 'pasteRole') {
           if (!Number.isInteger(message.selectionStart) || message.selectionStart < 0) {
-            return { ok: false, reason: 'command.pasteBody.selectionStart が不正です。' };
+            return { ok: false, reason: `command.${name}.selectionStart が不正です。` };
           }
           if (!Number.isInteger(message.selectionEnd) || message.selectionEnd < message.selectionStart) {
-            return { ok: false, reason: 'command.pasteBody.selectionEnd が不正です。' };
+            return { ok: false, reason: `command.${name}.selectionEnd が不正です。` };
           }
           if (typeof message.clipboardText !== 'string') {
-            return { ok: false, reason: 'command.pasteBody.clipboardText が不正です。' };
+            return { ok: false, reason: `command.${name}.clipboardText が不正です。` };
           }
         }
         return { ok: true };
@@ -2249,22 +2253,25 @@
 
     function handlePaste(event) {
       const bodyTarget = resolveFieldElementFromEventTarget(event.target, 'body');
-      if (!bodyTarget) {
+      const roleTarget = resolveFieldElementFromEventTarget(event.target, 'roleName');
+      const target = bodyTarget || roleTarget;
+      if (!target) {
         return;
       }
       const clipboardText = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
-      const recordIndex = Number(bodyTarget.dataset.recordIndex);
+      const recordIndex = Number(target.dataset.recordIndex);
       if (Number.isNaN(recordIndex)) {
         return;
       }
-      const selectionRange = getTextSelectionRange(bodyTarget);
+      const selectionRange = getTextSelectionRange(target);
       if (!selectionRange) {
         return;
       }
+      const commandName = target.dataset.field === 'roleName' ? 'pasteRole' : 'pasteBody';
       event.preventDefault();
       postMessage({
         type: 'command',
-        name: 'pasteBody',
+        name: commandName,
         recordIndex,
         selectionStart: selectionRange.start,
         selectionEnd: selectionRange.end,

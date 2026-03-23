@@ -908,7 +908,8 @@ public partial class MainWindow : Window
         var needsRecordIndex = message.Name == "insertAfter"
             || message.Name == "insertBefore"
             || message.Name == "deleteRecord"
-            || message.Name == "pasteBody";
+            || message.Name == "pasteBody"
+            || message.Name == "pasteRole";
 
         if (!needsRecordIndex
             && message.Name != "undo"
@@ -925,23 +926,23 @@ public partial class MainWindow : Window
             return false;
         }
 
-        if (message.Name == "pasteBody")
+        if (message.Name == "pasteBody" || message.Name == "pasteRole")
         {
             if (!message.SelectionStart.HasValue || message.SelectionStart.Value < 0)
             {
-                reason = "command.pasteBody の selectionStart が不正です。";
+                reason = $"command.{message.Name} の selectionStart が不正です。";
                 return false;
             }
 
             if (!message.SelectionEnd.HasValue || message.SelectionEnd.Value < message.SelectionStart.Value)
             {
-                reason = "command.pasteBody の selectionEnd が不正です。";
+                reason = $"command.{message.Name} の selectionEnd が不正です。";
                 return false;
             }
 
             if (message.ClipboardText == null)
             {
-                reason = "command.pasteBody の clipboardText が不正です。";
+                reason = $"command.{message.Name} の clipboardText が不正です。";
                 return false;
             }
         }
@@ -1193,6 +1194,29 @@ public partial class MainWindow : Window
                 ApplyBodyPasteCommand(recordIndex, selectionStart, selectionEnd, clipboardText);
                 break;
             }
+            case "pasteRole":
+            {
+                if (!root.TryGetProperty("selectionStart", out var selectionStartProperty)
+                    || !selectionStartProperty.TryGetInt32(out var selectionStart))
+                {
+                    return;
+                }
+
+                if (!root.TryGetProperty("selectionEnd", out var selectionEndProperty)
+                    || !selectionEndProperty.TryGetInt32(out var selectionEnd))
+                {
+                    return;
+                }
+
+                if (!root.TryGetProperty("clipboardText", out var clipboardProperty))
+                {
+                    return;
+                }
+
+                var clipboardText = clipboardProperty.GetString() ?? string.Empty;
+                ApplyRolePasteCommand(recordIndex, selectionStart, selectionEnd, clipboardText);
+                break;
+            }
         }
     }
 
@@ -1205,7 +1229,13 @@ public partial class MainWindow : Window
 
         var currentRecord = _document.Records[recordIndex];
         var currentBody = currentRecord.Body ?? string.Empty;
-        var effectiveClipboardText = ResolveClipboardTextForBodyPaste(clipboardText);
+        var effectiveClipboardText = ResolveClipboardTextForPaste(clipboardText);
+        if (effectiveClipboardText.Length == 0)
+        {
+            var fallbackCaret = Math.Clamp(selectionEnd, 0, currentBody.Length);
+            SendFocusToWebView(recordIndex, "body", fallbackCaret);
+            return;
+        }
         var segments = BodyPasteProcessor.ParseParagraphSegments(effectiveClipboardText);
         var shouldConfirmSplit = segments.Count >= 2;
 
@@ -1261,7 +1291,139 @@ public partial class MainWindow : Window
         SendFocusToWebView(targetRecordIndex, "body", result.CaretOffset);
     }
 
-    private static string ResolveClipboardTextForBodyPaste(string clipboardText)
+    private void ApplyRolePasteCommand(int recordIndex, int selectionStart, int selectionEnd, string clipboardText)
+    {
+        if (recordIndex < 0 || recordIndex >= _document.Records.Count)
+        {
+            return;
+        }
+
+        var effectiveClipboardText = ResolveClipboardTextForPaste(clipboardText);
+        if (effectiveClipboardText.Length == 0)
+        {
+            var fallbackCaret = Math.Clamp(selectionEnd, 0, (_document.Records[recordIndex].RoleName ?? string.Empty).Length);
+            SendFocusToWebView(recordIndex, "roleName", fallbackCaret);
+            return;
+        }
+        var segments = BodyPasteProcessor.ParseParagraphSegments(effectiveClipboardText);
+        var shouldConfirmSplit = segments.Count >= 2;
+
+        var useSplit = false;
+        if (shouldConfirmSplit)
+        {
+            var firstConfirmResult = System.Windows.MessageBox.Show(
+                this,
+                "貼り付け内容を複数の役名に分割して割り当てますか？\nいいえを選ぶと通常の貼り付けになります。",
+                "役名貼り付け方法の確認",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question,
+                System.Windows.MessageBoxResult.Yes);
+            useSplit = firstConfirmResult == System.Windows.MessageBoxResult.Yes;
+        }
+
+        var shortageMode = RolePasteShortageMode.AddRecords;
+        if (useSplit)
+        {
+            var availableCount = _document.Records.Count - recordIndex;
+            if (segments.Count > availableCount)
+            {
+                var shortageResult = System.Windows.MessageBox.Show(
+                    this,
+                    "割り当て先レコードが不足しています。\nはい: 不足分を末尾に追加して件数分を割り当てます。\nいいえ: 既存レコードに入る分だけ割り当てます。\nキャンセル: 貼り付けを中止します。",
+                    "役名割り当て先不足の確認",
+                    System.Windows.MessageBoxButton.YesNoCancel,
+                    System.Windows.MessageBoxImage.Question,
+                    System.Windows.MessageBoxResult.Yes);
+
+                if (shortageResult == System.Windows.MessageBoxResult.Cancel)
+                {
+                    var fallbackCaret = Math.Clamp(selectionEnd, 0, (_document.Records[recordIndex].RoleName ?? string.Empty).Length);
+                    SendFocusToWebView(recordIndex, "roleName", fallbackCaret);
+                    return;
+                }
+
+                shortageMode = shortageResult == System.Windows.MessageBoxResult.Yes
+                    ? RolePasteShortageMode.AddRecords
+                    : RolePasteShortageMode.ExistingOnly;
+            }
+        }
+
+        var roleNames = _document.Records
+            .ConvertAll(static record => record.RoleName ?? string.Empty);
+
+        var result = RolePasteProcessor.Apply(
+            roleNames,
+            recordIndex,
+            selectionStart,
+            selectionEnd,
+            effectiveClipboardText,
+            useSplit,
+            shortageMode);
+
+        if (result.Canceled)
+        {
+            var fallbackCaret = Math.Clamp(selectionEnd, 0, (_document.Records[recordIndex].RoleName ?? string.Empty).Length);
+            SendFocusToWebView(recordIndex, "roleName", fallbackCaret);
+            return;
+        }
+
+        if (result.UsedSplit && result.HasOverwriteTargets)
+        {
+            var overwriteResult = System.Windows.MessageBox.Show(
+                this,
+                "割り当て対象に既存の役名が含まれています。上書きして続行しますか？",
+                "役名上書き確認",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning,
+                System.Windows.MessageBoxResult.Yes);
+            if (overwriteResult != System.Windows.MessageBoxResult.Yes)
+            {
+                var fallbackCaret = Math.Clamp(selectionEnd, 0, (_document.Records[recordIndex].RoleName ?? string.Empty).Length);
+                SendFocusToWebView(recordIndex, "roleName", fallbackCaret);
+                return;
+            }
+        }
+
+        if (!result.HasChanges)
+        {
+            var unchangedIndex = Math.Clamp(recordIndex + result.CaretRecordOffset, 0, _document.Records.Count - 1);
+            SendFocusToWebView(unchangedIndex, "roleName", result.CaretOffset);
+            return;
+        }
+
+        PushUndoState();
+
+        for (var offset = 0; offset < result.AssignedExistingRoles.Count; offset += 1)
+        {
+            var targetIndex = recordIndex + offset;
+            if (targetIndex < 0 || targetIndex >= _document.Records.Count)
+            {
+                continue;
+            }
+
+            _document.Records[targetIndex].RoleName = result.AssignedExistingRoles[offset];
+        }
+
+        foreach (var appendedRole in result.AppendedRoles)
+        {
+            _document.Records.Add(new ScriptRecord
+            {
+                RoleName = appendedRole,
+                Body = string.Empty
+            });
+        }
+
+        SynchronizeRoleDictionary();
+        MarkDirty();
+        SendDocumentToWebView();
+        SendRoleDictionaryToWebView();
+        UpdateStatusBar();
+
+        var focusRecordIndex = Math.Clamp(recordIndex + result.CaretRecordOffset, 0, _document.Records.Count - 1);
+        SendFocusToWebView(focusRecordIndex, "roleName", result.CaretOffset);
+    }
+
+    private static string ResolveClipboardTextForPaste(string clipboardText)
     {
         if (!string.IsNullOrEmpty(clipboardText))
         {
