@@ -16,8 +16,8 @@ public static class DocumentSettings
 
     public const double PageWidthMm = 297.0;
     public const double PageHeightMm = 210.0;
-    public const double MarginLeftMm = 21.1;
-    public const double MarginRightMm = 21.1;
+    public const double MarginLeftMm = 17.73;
+    public const double MarginRightMm = 17.73;
     public const double MarginTopMm = 25.4;
     public const double MarginBottomMm = 25.4;
 

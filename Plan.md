@@ -19,7 +19,7 @@
   - WPF の簡易縦書き描画ロジック（列分割・回転描画）
 
 ## 先に潰すべきスパイク工程
-1. WebView2 の縦書き描画品質確認（`writing-mode: vertical-rl`、游明朝 10.5pt、余白 20/25mm）
+1. WebView2 の縦書き描画品質確認（`writing-mode: vertical-rl`、游明朝 10.5pt、余白 17.73/25.4mm）
 2. IME 変換中の編集・キー制御（composition と Enter/Tab/Ctrl+Enter の共存）
 3. 手動ページング（keep-together、溢れ警告）の計測方式
 4. PDF 出力の一致性（WebView2 印刷結果の固定レイアウト）
