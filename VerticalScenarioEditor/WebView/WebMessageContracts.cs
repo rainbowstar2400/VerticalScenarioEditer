@@ -52,6 +52,12 @@ public sealed class CommandWebMessage
 
     [JsonPropertyName("clipboardText")]
     public string? ClipboardText { get; set; }
+
+    [JsonPropertyName("field")]
+    public string? Field { get; set; }
+
+    [JsonPropertyName("caretOffset")]
+    public int? CaretOffset { get; set; }
 }
 
 public sealed class ZoomDeltaWebMessage
@@ -244,4 +250,10 @@ public sealed class ExitPdfModeHostMessage
 {
     [JsonPropertyName("type")]
     public string Type { get; set; } = "exitPdfMode";
+}
+
+public sealed class RequestManualPageBreakInsertHostMessage
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "requestManualPageBreakInsert";
 }

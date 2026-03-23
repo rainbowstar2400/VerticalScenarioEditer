@@ -28,7 +28,8 @@ public static class DocumentStateCloner
                 clone.Records.Add(new ScriptRecord
                 {
                     RoleName = record?.RoleName ?? string.Empty,
-                    Body = record?.Body ?? string.Empty
+                    Body = record?.Body ?? string.Empty,
+                    PageBreakBefore = record?.PageBreakBefore == true
                 });
             }
         }
@@ -44,6 +45,11 @@ public static class DocumentStateCloner
 
                 clone.RoleDictionary[pair.Key] = pair.Value ?? string.Empty;
             }
+        }
+
+        if (clone.Records.Count > 0)
+        {
+            clone.Records[0].PageBreakBefore = false;
         }
 
         return clone;

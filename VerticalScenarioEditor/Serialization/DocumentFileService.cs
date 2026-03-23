@@ -83,7 +83,8 @@ public static class DocumentFileService
                 normalized.Records.Add(new ScriptRecord
                 {
                     RoleName = record?.RoleName ?? string.Empty,
-                    Body = record?.Body ?? string.Empty
+                    Body = record?.Body ?? string.Empty,
+                    PageBreakBefore = record?.PageBreakBefore == true
                 });
             }
         }
@@ -99,6 +100,11 @@ public static class DocumentFileService
 
                 normalized.RoleDictionary[pair.Key] = pair.Value ?? string.Empty;
             }
+        }
+
+        if (normalized.Records.Count > 0)
+        {
+            normalized.Records[0].PageBreakBefore = false;
         }
 
         return normalized;

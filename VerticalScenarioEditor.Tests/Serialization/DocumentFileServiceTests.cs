@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using VerticalScenarioEditor.Models;
 using VerticalScenarioEditor.Serialization;
 using Xunit;
@@ -35,6 +34,12 @@ public sealed class DocumentFileServiceTests : IDisposable
                 {
                     RoleName = "太郎",
                     Body = "台詞"
+                },
+                new ScriptRecord
+                {
+                    RoleName = "花子",
+                    Body = "返答",
+                    PageBreakBefore = true
                 }
             },
             RoleDictionary =
@@ -49,9 +54,13 @@ public sealed class DocumentFileServiceTests : IDisposable
         Assert.False(loaded.PageNumberEnabled);
         Assert.False(loaded.ShowGuides);
         Assert.Equal("概要", loaded.SummaryText);
-        Assert.Single(loaded.Records);
-        Assert.Equal("太郎", loaded.Records.Single().RoleName);
-        Assert.Equal("台詞", loaded.Records.Single().Body);
+        Assert.Equal(2, loaded.Records.Count);
+        Assert.Equal("太郎", loaded.Records[0].RoleName);
+        Assert.Equal("台詞", loaded.Records[0].Body);
+        Assert.False(loaded.Records[0].PageBreakBefore);
+        Assert.Equal("花子", loaded.Records[1].RoleName);
+        Assert.Equal("返答", loaded.Records[1].Body);
+        Assert.True(loaded.Records[1].PageBreakBefore);
         Assert.Equal("#111111", loaded.RoleDictionary["太郎"]);
     }
 
@@ -110,12 +119,12 @@ public sealed class DocumentFileServiceTests : IDisposable
                    {
                      "version": 1,
                      "document": {
-                       "summaryText": null,
-                       "records": [null, { "roleName": null, "body": null }],
-                       "roleDictionary": {
-                         "太郎": null,
-                         "": "#ff0000"
-                       }
+                        "summaryText": null,
+                        "records": [{ "roleName": null, "body": null, "pageBreakBefore": true }, { "roleName": null, "body": null, "pageBreakBefore": true }],
+                        "roleDictionary": {
+                          "太郎": null,
+                          "": "#ff0000"
+                        }
                      }
                    }
                    """;
@@ -128,8 +137,10 @@ public sealed class DocumentFileServiceTests : IDisposable
         Assert.All(loaded.Records, record => Assert.NotNull(record));
         Assert.Equal(string.Empty, loaded.Records[0].RoleName);
         Assert.Equal(string.Empty, loaded.Records[0].Body);
+        Assert.False(loaded.Records[0].PageBreakBefore);
         Assert.Equal(string.Empty, loaded.Records[1].RoleName);
         Assert.Equal(string.Empty, loaded.Records[1].Body);
+        Assert.True(loaded.Records[1].PageBreakBefore);
         Assert.Equal(string.Empty, loaded.RoleDictionary["太郎"]);
         Assert.DoesNotContain(string.Empty, loaded.RoleDictionary.Keys);
     }

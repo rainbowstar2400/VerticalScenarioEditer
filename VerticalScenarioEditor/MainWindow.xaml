@@ -30,6 +30,10 @@
                     <MenuItem Header="セリフのみコピー" Click="OnCopyDialogueTextClick" />
                 </MenuItem>
                 <MenuItem Header="役名辞書..." Click="OnRoleDictionaryClick" />
+                <MenuItem x:Name="InsertManualPageBreakMenuItem"
+                          Header="手動改ページを挿入"
+                          InputGestureText="Ctrl+Alt+Enter"
+                          Click="OnInsertManualPageBreakClick" />
                 <Separator />
                 <MenuItem Header="環境設定..." Click="OnOpenSettingsClick" />
                 <MenuItem x:Name="SelectionModeMenuItem"

@@ -78,6 +78,7 @@ public partial class MainWindow : Window
         UpdateSummaryModeToggleState();
         UpdateSimpleModeToggleState();
         UpdateSelectionModeAvailability();
+        UpdateManualPageBreakMenuAvailability();
         UpdateZoomUi(_appSettings.ZoomScale);
         UpdateStatusBar();
         Loaded += OnLoaded;
@@ -202,6 +203,7 @@ public partial class MainWindow : Window
             UpdateSummaryModeToggleState();
             UpdateSimpleModeToggleState();
             UpdateSelectionModeAvailability();
+            UpdateManualPageBreakMenuAvailability();
             ResetOverflowWarningState();
             ClearSelectionRange();
             ClearHistory();
@@ -249,6 +251,7 @@ public partial class MainWindow : Window
             UpdateSummaryModeToggleState();
             UpdateSimpleModeToggleState();
             UpdateSelectionModeAvailability();
+            UpdateManualPageBreakMenuAvailability();
             ResetOverflowWarningState();
             ClearSelectionRange();
             ClearHistory();
@@ -291,6 +294,10 @@ public partial class MainWindow : Window
         UpdateGuideLineToggleState();
         UpdateBreakMarkerToggleState();
         UpdateSelectionModeToggleState();
+        UpdateSummaryModeToggleState();
+        UpdateSimpleModeToggleState();
+        UpdateSelectionModeAvailability();
+        UpdateManualPageBreakMenuAvailability();
         ResetOverflowWarningState();
         ClearSelectionRange();
         ClearHistory();
@@ -401,6 +408,16 @@ public partial class MainWindow : Window
             SendDocumentToWebView();
             SendRoleDictionaryToWebView();
         }
+    }
+
+    private void OnInsertManualPageBreakClick(object sender, RoutedEventArgs e)
+    {
+        if (_isSelectionMode || _isSimpleMode)
+        {
+            return;
+        }
+
+        RequestManualPageBreakInsertToWebView();
     }
 
     private void OnOpenSettingsClick(object sender, RoutedEventArgs e)
@@ -909,7 +926,9 @@ public partial class MainWindow : Window
             || message.Name == "insertBefore"
             || message.Name == "deleteRecord"
             || message.Name == "pasteBody"
-            || message.Name == "pasteRole";
+            || message.Name == "pasteRole"
+            || message.Name == "insertManualPageBreak"
+            || message.Name == "removeManualPageBreak";
 
         if (!needsRecordIndex
             && message.Name != "undo"
@@ -943,6 +962,21 @@ public partial class MainWindow : Window
             if (message.ClipboardText == null)
             {
                 reason = $"command.{message.Name} の clipboardText が不正です。";
+                return false;
+            }
+        }
+
+        if (message.Name == "insertManualPageBreak")
+        {
+            if (message.Field != "roleName" && message.Field != "body")
+            {
+                reason = "command.insertManualPageBreak の field が不正です。";
+                return false;
+            }
+
+            if (!message.CaretOffset.HasValue || message.CaretOffset.Value < 0)
+            {
+                reason = "command.insertManualPageBreak の caretOffset が不正です。";
                 return false;
             }
         }
@@ -1217,7 +1251,100 @@ public partial class MainWindow : Window
                 ApplyRolePasteCommand(recordIndex, selectionStart, selectionEnd, clipboardText);
                 break;
             }
+            case "insertManualPageBreak":
+            {
+                if (!root.TryGetProperty("field", out var fieldProperty))
+                {
+                    return;
+                }
+
+                var field = fieldProperty.GetString();
+                if (field != "roleName" && field != "body")
+                {
+                    return;
+                }
+
+                if (!root.TryGetProperty("caretOffset", out var caretOffsetProperty)
+                    || !caretOffsetProperty.TryGetInt32(out var caretOffset)
+                    || caretOffset < 0)
+                {
+                    return;
+                }
+
+                ApplyInsertManualPageBreakCommand(recordIndex, field, caretOffset);
+                break;
+            }
+            case "removeManualPageBreak":
+                ApplyRemoveManualPageBreakCommand(recordIndex);
+                break;
         }
+    }
+
+    private void ApplyInsertManualPageBreakCommand(int recordIndex, string field, int caretOffset)
+    {
+        if (recordIndex < 0 || recordIndex >= _document.Records.Count)
+        {
+            return;
+        }
+
+        var targetIndex = field == "body" && caretOffset <= 0
+            ? recordIndex
+            : recordIndex + 1;
+
+        if (targetIndex <= 0)
+        {
+            return;
+        }
+
+        if (targetIndex > _document.Records.Count)
+        {
+            targetIndex = _document.Records.Count;
+        }
+
+        var changed = targetIndex == _document.Records.Count
+            || !_document.Records[targetIndex].PageBreakBefore;
+        if (!changed)
+        {
+            return;
+        }
+
+        PushUndoState();
+        if (targetIndex == _document.Records.Count)
+        {
+            _document.Records.Add(new ScriptRecord
+            {
+                PageBreakBefore = true
+            });
+        }
+        else
+        {
+            _document.Records[targetIndex].PageBreakBefore = true;
+        }
+
+        _document.Records[0].PageBreakBefore = false;
+        MarkDirty();
+        SendDocumentToWebView();
+        UpdateStatusBar();
+    }
+
+    private void ApplyRemoveManualPageBreakCommand(int recordIndex)
+    {
+        if (recordIndex <= 0 || recordIndex >= _document.Records.Count)
+        {
+            return;
+        }
+
+        if (!_document.Records[recordIndex].PageBreakBefore)
+        {
+            return;
+        }
+
+        PushUndoState();
+        _document.Records[recordIndex].PageBreakBefore = false;
+        _document.Records[0].PageBreakBefore = false;
+        MarkDirty();
+        SendDocumentToWebView();
+        UpdateStatusBar();
     }
 
     private void ApplyBodyPasteCommand(int recordIndex, int selectionStart, int selectionEnd, string clipboardText)
@@ -1491,6 +1618,8 @@ public partial class MainWindow : Window
         {
             _document.Records.Add(new ScriptRecord());
         }
+
+        _document.Records[0].PageBreakBefore = false;
     }
 
     private void PushUndoState()
@@ -1678,6 +1807,16 @@ public partial class MainWindow : Window
             return;
         }
         SelectionModeMenuItem.IsEnabled = !_isSummaryMode;
+    }
+
+    private void UpdateManualPageBreakMenuAvailability()
+    {
+        if (InsertManualPageBreakMenuItem == null)
+        {
+            return;
+        }
+
+        InsertManualPageBreakMenuItem.IsEnabled = !_isSelectionMode && !_isSimpleMode;
     }
 
     private void ResetOverflowWarningState()
@@ -2031,6 +2170,16 @@ public partial class MainWindow : Window
         PostMessageToWebView(payload);
     }
 
+    private void RequestManualPageBreakInsertToWebView()
+    {
+        if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
+        {
+            return;
+        }
+
+        PostMessageToWebView(new RequestManualPageBreakInsertHostMessage());
+    }
+
     private void SendFocusToWebView(int recordIndex, string field, int caretOffset)
     {
         if (EditorWebView.CoreWebView2 == null || !_isWebContentReady)
@@ -2271,6 +2420,7 @@ public partial class MainWindow : Window
         SendSelectionModeToWebView();
         SendDocumentToWebView();
         UpdateSelectionModeAvailability();
+        UpdateManualPageBreakMenuAvailability();
     }
 
     private void OnSummaryModeToggleChanged(object sender, RoutedEventArgs e)
@@ -2292,6 +2442,7 @@ public partial class MainWindow : Window
         SendSelectionModeToWebView();
         SendDocumentToWebView();
         UpdateSelectionModeAvailability();
+        UpdateManualPageBreakMenuAvailability();
     }
 
     private void OnSimpleModeToggleChanged(object sender, RoutedEventArgs e)
@@ -2308,6 +2459,7 @@ public partial class MainWindow : Window
             UpdateSummaryModeToggleState();
         }
         SendDocumentToWebView();
+        UpdateManualPageBreakMenuAvailability();
     }
 }
 

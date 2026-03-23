@@ -510,6 +510,24 @@
       return best;
     }
 
+    function drawManualPageBreakMarkers(page, ctx, overlayRect, marker, markerSize) {
+      const records = Array.from(page.querySelectorAll('.record[data-page-break-before="true"]'));
+      records.forEach((recordElement) => {
+        const bodyElement = getBodyElement(recordElement);
+        if (!bodyElement) {
+          return;
+        }
+        const rects = bodyElement.getClientRects();
+        if (!rects.length) {
+          return;
+        }
+        const firstRect = rects[0];
+        const x = firstRect.left - overlayRect.left + Math.max(2, (firstRect.width - markerSize) / 2);
+        const y = Math.max(2, firstRect.top - overlayRect.top - markerSize - 2);
+        ctx.fillText(marker, x, y);
+      });
+    }
+
     function updateBreakMarkers() {
       if (!layoutState || !pagesHost) {
         return;
@@ -529,6 +547,7 @@
 
       const lineMarker = '\u21B5';
       const pageMarker = '\u2A3D';
+      const manualPageBreakMarker = '\u21A1';
       const markerSize = 10;
 
       pages.forEach((page, pageIndex) => {
@@ -549,6 +568,8 @@
             drawRecordEndMarker(element, ctx, overlayRect, lineMarker, markerSize);
           }
         });
+
+        drawManualPageBreakMarkers(page, ctx, overlayRect, manualPageBreakMarker, markerSize);
 
         if (pageIndex < pages.length - 1) {
           const lastRect = findPageLastRect(page);
@@ -644,6 +665,14 @@
 
       recordElements.forEach((recordElement, index) => {
         recordElement.classList.remove('overflow');
+        const forcePageBreak = index > 0 && recordElement.dataset.pageBreakBefore === 'true';
+        if (forcePageBreak && usedWidth > 0) {
+          pagesHost.appendChild(page);
+          pageIndex += 1;
+          ({ page, content } = createPage());
+          page.dataset.pageIndex = `${pageIndex}`;
+          usedWidth = 0;
+        }
         const storedWidth = Number(recordElement.dataset.recordWidth);
         const recordWidth = Number.isFinite(storedWidth) && storedWidth > 0
           ? storedWidth
@@ -934,10 +963,12 @@
         const record = records[recordIndex] || {};
         const bodyTokens = tokenizeText(record.body || '');
         const roleTokens = tokenizeText(record.roleName || '');
+        const pageBreakBefore = record.pageBreakBefore === true;
 
         const recordContainer = document.createElement('div');
         recordContainer.className = 'record';
         recordContainer.dataset.recordIndex = `${recordIndex}`;
+        recordContainer.dataset.pageBreakBefore = pageBreakBefore ? 'true' : 'false';
         recordContainer.style.height = `${contentHeight}px`;
         recordContainer.style.width = `${recordWidth}px`;
 
@@ -1014,6 +1045,12 @@
 
       recordElements.forEach((recordElement, index) => {
         recordElement.classList.remove('overflow');
+        const forcePageBreak = index > 0 && recordElement.dataset.pageBreakBefore === 'true';
+        if (forcePageBreak && usedWidth > 0) {
+          pageIndex += 1;
+          usedWidth = 0;
+          startPage();
+        }
         const storedWidth = Number(recordElement.dataset.recordWidth);
         const recordWidth = Number.isFinite(storedWidth) && storedWidth > 0
           ? storedWidth
@@ -1839,7 +1876,9 @@
           || name === 'insertBefore'
           || name === 'deleteRecord'
           || name === 'pasteBody'
-          || name === 'pasteRole';
+          || name === 'pasteRole'
+          || name === 'insertManualPageBreak'
+          || name === 'removeManualPageBreak';
         const withoutRecord = name === 'undo' || name === 'redo' || name === 'save';
         if (!withRecord && !withoutRecord) {
           return { ok: false, reason: 'command.name が不正です。' };
@@ -1856,6 +1895,14 @@
           }
           if (typeof message.clipboardText !== 'string') {
             return { ok: false, reason: `command.${name}.clipboardText が不正です。` };
+          }
+        }
+        if (name === 'insertManualPageBreak') {
+          if (message.field !== 'roleName' && message.field !== 'body') {
+            return { ok: false, reason: 'command.insertManualPageBreak.field が不正です。' };
+          }
+          if (!Number.isInteger(message.caretOffset) || message.caretOffset < 0) {
+            return { ok: false, reason: 'command.insertManualPageBreak.caretOffset が不正です。' };
           }
         }
         return { ok: true };
@@ -1955,6 +2002,10 @@
       }
 
       if (message.type === 'exitPdfMode') {
+        return { ok: true };
+      }
+
+      if (message.type === 'requestManualPageBreakInsert') {
         return { ok: true };
       }
 
@@ -2092,6 +2143,7 @@
         doc.records = doc.records.map((record) => ({
           roleName: record.roleName ?? record.RoleName ?? '',
           body: record.body ?? record.Body ?? '',
+          pageBreakBefore: record.pageBreakBefore === true || record.PageBreakBefore === true,
         }));
       }
       currentDocument = doc;
@@ -2181,11 +2233,13 @@
         const bodyText = record.body || '';
         const bodyTokens = tokenizeText(bodyText);
         const roleTokens = tokenizeText(record.roleName || '');
+        const pageBreakBefore = record.pageBreakBefore === true;
         const recordWidth = lineAdvance;
 
         const recordContainer = document.createElement('div');
         recordContainer.className = 'record';
         recordContainer.dataset.recordIndex = `${recordIndex}`;
+        recordContainer.dataset.pageBreakBefore = pageBreakBefore ? 'true' : 'false';
         recordContainer.style.height = `${contentHeight}px`;
         recordContainer.style.width = `${recordWidth}px`;
 
@@ -2279,6 +2333,181 @@
       });
     }
 
+    function getActiveEditableTarget() {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement)) {
+        return null;
+      }
+      const field = active.dataset.field;
+      if (field === 'body' || field === 'roleName' || field === 'summary') {
+        return active;
+      }
+      return null;
+    }
+
+    function getCaretOffsetForCommandTarget(target) {
+      const selectionRange = getTextSelectionRange(target);
+      if (selectionRange && Number.isInteger(selectionRange.start) && selectionRange.start >= 0) {
+        return selectionRange.start;
+      }
+      const info = getTextAndCaret(target);
+      return Math.max(0, info.caret);
+    }
+
+    function requestManualPageBreakInsertFromBodyOrRole(target) {
+      if (!(target instanceof HTMLElement) || simpleMode || selectionMode) {
+        return false;
+      }
+      const field = target.dataset.field;
+      if (field !== 'body' && field !== 'roleName') {
+        return false;
+      }
+      const recordIndex = Number(target.dataset.recordIndex);
+      if (Number.isNaN(recordIndex) || !currentDocument || !currentDocument.records) {
+        return false;
+      }
+      const caretOffset = getCaretOffsetForCommandTarget(target);
+      const keepCurrent = field === 'body' && caretOffset <= 0;
+      if (keepCurrent) {
+        pendingFocus = { recordIndex, field: 'body', atStart: true };
+      } else {
+        const nextIndex = recordIndex + 1;
+        pendingFocus = { recordIndex: nextIndex, field: 'roleName', atStart: true };
+      }
+      postMessage({
+        type: 'command',
+        name: 'insertManualPageBreak',
+        recordIndex,
+        field,
+        caretOffset,
+      });
+      return true;
+    }
+
+    function requestManualPageBreakInsertFromCurrentFocus() {
+      const target = getActiveEditableTarget();
+      if (!target) {
+        return false;
+      }
+      if (target.dataset.field === 'summary') {
+        insertSummaryPageBreak(target);
+        return true;
+      }
+      return requestManualPageBreakInsertFromBodyOrRole(target);
+    }
+
+    function removeSummaryPageBreakByKey(target, key) {
+      if (!(target instanceof HTMLElement) || target.dataset.field !== 'summary') {
+        return false;
+      }
+      const selectionRange = getTextSelectionRange(target);
+      if (!selectionRange || selectionRange.start !== selectionRange.end) {
+        return false;
+      }
+
+      const pageIndex = Number(target.dataset.summaryIndex);
+      if (Number.isNaN(pageIndex)) {
+        return false;
+      }
+
+      const info = getTextAndCaret(target);
+      const sections = summaryPageElements.map((element) => normalizeTextFromElement(element));
+      if (sections.length <= 1) {
+        return false;
+      }
+
+      if (key === 'Backspace') {
+        if (selectionRange.start !== 0 || pageIndex <= 0 || pageIndex >= sections.length) {
+          return false;
+        }
+        sections[pageIndex - 1] = `${sections[pageIndex - 1]}${sections[pageIndex]}`;
+        sections.splice(pageIndex, 1);
+        const summaryText = sections.join('\f');
+        postMessage({
+          type: 'inputPatch',
+          recordIndex: 0,
+          field: 'summary',
+          text: summaryText,
+        });
+        pendingFocus = { field: 'summary', summaryIndex: pageIndex - 1, atStart: false };
+        pagesHost.innerHTML = '';
+        renderSummaryPages(sections, { editable: true });
+        return true;
+      }
+
+      if (key === 'Delete') {
+        if (selectionRange.start !== info.text.length || pageIndex < 0 || pageIndex >= sections.length - 1) {
+          return false;
+        }
+        sections[pageIndex] = `${sections[pageIndex]}${sections[pageIndex + 1]}`;
+        sections.splice(pageIndex + 1, 1);
+        const summaryText = sections.join('\f');
+        postMessage({
+          type: 'inputPatch',
+          recordIndex: 0,
+          field: 'summary',
+          text: summaryText,
+        });
+        pendingFocus = { field: 'summary', summaryIndex: pageIndex, atStart: false };
+        pagesHost.innerHTML = '';
+        renderSummaryPages(sections, { editable: true });
+        return true;
+      }
+
+      return false;
+    }
+
+    function requestBodyManualPageBreakRemovalByKey(target, key) {
+      if (!(target instanceof HTMLElement) || simpleMode || selectionMode) {
+        return false;
+      }
+      const field = target.dataset.field;
+      if (field !== 'body' && field !== 'roleName') {
+        return false;
+      }
+      const recordIndex = Number(target.dataset.recordIndex);
+      if (Number.isNaN(recordIndex) || !currentDocument || !currentDocument.records) {
+        return false;
+      }
+      const selectionRange = getTextSelectionRange(target);
+      if (!selectionRange || selectionRange.start !== selectionRange.end) {
+        return false;
+      }
+      const info = getTextAndCaret(target);
+
+      if (key === 'Backspace') {
+        if (selectionRange.start !== 0 || recordIndex <= 0) {
+          return false;
+        }
+        pendingFocus = { recordIndex, field, atStart: true };
+        postMessage({
+          type: 'command',
+          name: 'removeManualPageBreak',
+          recordIndex,
+        });
+        return true;
+      }
+
+      if (key === 'Delete') {
+        if (selectionRange.start !== info.text.length) {
+          return false;
+        }
+        const nextIndex = recordIndex + 1;
+        if (!currentDocument.records[nextIndex]) {
+          return false;
+        }
+        pendingFocus = { recordIndex, field, atStart: false };
+        postMessage({
+          type: 'command',
+          name: 'removeManualPageBreak',
+          recordIndex: nextIndex,
+        });
+        return true;
+      }
+
+      return false;
+    }
+
     function handleKeyDown(event) {
       const target = event.target;
       if (!(target instanceof HTMLElement)) {
@@ -2308,10 +2537,16 @@
       }
 
       if (field === 'summary') {
-        if (event.key === 'Enter' && event.ctrlKey) {
+        if (event.key === 'Enter' && event.ctrlKey && event.altKey) {
           event.preventDefault();
           insertSummaryPageBreak(target);
           return;
+        }
+        if (event.key === 'Backspace' || event.key === 'Delete') {
+          if (removeSummaryPageBreakByKey(target, event.key)) {
+            event.preventDefault();
+            return;
+          }
         }
         if (event.key === 'Enter') {
           event.preventDefault();
@@ -2339,6 +2574,13 @@
       }
       const roleElement = getRoleElement(recordElement);
       const bodyElement = getBodyElement(recordElement);
+
+      if (event.key === 'Enter' && event.ctrlKey && event.altKey) {
+        if (requestManualPageBreakInsertFromBodyOrRole(target)) {
+          event.preventDefault();
+          return;
+        }
+      }
 
       if (event.ctrlKey && event.shiftKey && event.key === 'Enter') {
         event.preventDefault();
@@ -2480,6 +2722,10 @@
       }
 
       if (event.key === 'Backspace') {
+        if (requestBodyManualPageBreakRemovalByKey(target, 'Backspace')) {
+          event.preventDefault();
+          return;
+        }
         const roleText = roleElement ? normalizeTextFromElement(roleElement).trim() : '';
         const bodyText = bodyElement ? normalizeTextFromElement(bodyElement).trim() : '';
         if (roleText.length === 0 && bodyText.length === 0) {
@@ -2487,6 +2733,13 @@
           const focusIndex = Math.max(0, recordIndex - 1);
           pendingFocus = { recordIndex: focusIndex, field: 'body', atStart: false };
           postMessage({ type: 'command', name: 'deleteRecord', recordIndex });
+        }
+        return;
+      }
+
+      if (event.key === 'Delete') {
+        if (requestBodyManualPageBreakRemovalByKey(target, 'Delete')) {
+          event.preventDefault();
         }
       }
     }
@@ -2572,6 +2825,10 @@
         }
         if (message.type === 'applyFocus') {
           focusRecordAtOffset(message.recordIndex, message.field, message.caretOffset);
+          return;
+        }
+        if (message.type === 'requestManualPageBreakInsert') {
+          requestManualPageBreakInsertFromCurrentFocus();
           return;
         }
         if (message.type === 'enterPdfMode') {

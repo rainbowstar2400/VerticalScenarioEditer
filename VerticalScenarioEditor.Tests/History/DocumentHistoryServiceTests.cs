@@ -82,6 +82,41 @@ public sealed class DocumentHistoryServiceTests
         Assert.Equal("After", redone.SummaryText);
     }
 
+    [Fact]
+    public void UndoRedo_ShouldPreserveManualPageBreakFlags()
+    {
+        var history = new DocumentHistoryService();
+        var previous = new DocumentState
+        {
+            SummaryText = "Before",
+            Records =
+            {
+                new ScriptRecord
+                {
+                    RoleName = "役A",
+                    Body = "台詞A",
+                    PageBreakBefore = false
+                },
+                new ScriptRecord
+                {
+                    RoleName = "役B",
+                    Body = "台詞B",
+                    PageBreakBefore = true
+                }
+            }
+        };
+        history.PushSnapshot(previous);
+
+        var current = CreateDocument("After");
+        Assert.True(history.TryUndo(current, out var undone));
+        Assert.Equal(2, undone.Records.Count);
+        Assert.False(undone.Records[0].PageBreakBefore);
+        Assert.True(undone.Records[1].PageBreakBefore);
+
+        Assert.True(history.TryRedo(undone, out var redone));
+        Assert.False(redone.Records[0].PageBreakBefore);
+    }
+
     private static DocumentState CreateDocument(string summaryText)
     {
         return new DocumentState
